@@ -1,0 +1,16 @@
+# Build dependencies and output
+**/node_modules/
+**/target/
+**/dist/
+**/release/
+
+# Local Bridge runtime data
+.status/
+bridge-status/
+*.log
+
+# OS/editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
