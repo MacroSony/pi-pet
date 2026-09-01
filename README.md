@@ -15,6 +15,7 @@
 - `claude-status-pet/` — upstream presentation renderer submodule
 - `PLAN.md` — 产品计划
 - `ARCHITECTURE-AUDIT.md` — 架构、接口与试运行配置
+- `REMOTE-PI-DESIGN.md` — Remote Pi adapter 的复用设计、ownership 规则与测试矩阵
 
 ## License
 
