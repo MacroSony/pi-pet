@@ -12,10 +12,11 @@
 ## 仓库结构
 
 - `clawd-on-desk/` — private mirror submodule，分支 `pi-pet-bridge`
-- `claude-status-pet/` — upstream presentation renderer submodule
+- `claude-status-pet/` — private renderer fork submodule，分支 `pi-pet-mvp`
 - `PLAN.md` — 产品计划
 - `ARCHITECTURE-AUDIT.md` — 架构、接口与试运行配置
 - `REMOTE-PI-DESIGN.md` — Remote Pi adapter 的复用设计、ownership 规则与测试矩阵
+- `ANIMATION-ASSET-PLAN.md` — status-pet/Clawd 动画能力对比与 MiniMax H3 素材流程
 
 ## License
 

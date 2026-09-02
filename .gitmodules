@@ -4,4 +4,5 @@
 	branch = pi-pet-bridge
 [submodule "claude-status-pet"]
 	path = claude-status-pet
-	url = https://github.com/moeyui1/claude-status-pet.git
+	url = git@github.com:MacroSony/pi-pet-status-pet.git
+	branch = pi-pet-mvp
