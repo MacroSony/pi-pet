@@ -9,6 +9,15 @@
 bridge-status/
 *.log
 
+# Generated local animation-pack artifacts
+/h3-mutsumi-gray-hybrid-v2.zip
+/h3-mutsumi-gray-hybrid-v2.zip.sha256
+/h3-mutsumi-gray-hybrid-v2/
+
+# Local visual audit references and screenshots
+/*.png
+/*-AUDIT.md
+
 # OS/editor files
 .DS_Store
 Thumbs.db

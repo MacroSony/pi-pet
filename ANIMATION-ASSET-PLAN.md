@@ -187,6 +187,107 @@ ffmpeg -i h3-idle.mp4 -an \
 }
 ```
 
+## 6.1 已验证的 Direct-Gray Hybrid v2 管线（2026-09-03）
+
+此前的洋红色键控方案已被以下管线取代：
+
+```text
+原始透明 RGBA（不得经过任何 H3 彩色背景）
+→ premultiplied resize
+→ 直接合成中性灰 #888888
+→ H3 单首帧生成状态 enter
+→ 选取稳定末帧作为状态专用 anchor
+→ 同一 anchor 同时连接 FL2VA first_frame / last_frame
+→ Turbo8 生成 768×768、124 帧、24fps 循环
+→ VAEDecode 后直接保存无损 PNG
+→ 首帧灰底差分 mask / SAM3 时序跟踪
+→ Hybrid cartoon alpha
+→ premultiplied-alpha 缩放到 280×280
+→ 78 帧约 15fps lossless animated WebP
+```
+
+固定参数：
+
+- 背景：`#888888`；允许 H3/VAE 将其轻微偏移为约 `[131,130,129]`，但要求整段空间和时间稳定。
+- H3 loop：MiniMax H3 FL2VA Turbo LoRA 1.0、8 steps、Euler、simple、video shift 6、audio shift 3。
+- Loop：同一专用 anchor 作为首尾结构约束；768×768，124 帧，约 5.17 秒，24fps。
+- 抠像输入：只能使用 VAEDecode 后 PNG；禁止先经过 H.264/yuv420p。
+- Hybrid alpha：在 SAM 时序语义区域的 7px 膨胀带内，合并 SAM alpha 与逐帧中性灰 plate 色差 key；高对比线稿优先按不透明处理。
+- 边缘颜色：保留不透明核心的原始 RGB，仅在弱 alpha 窄边缘执行最近稳定前景颜色延展。
+- 最终缩放：先 premultiply，再 area resize，最后 unpremultiply；不得直接缩放 straight RGBA。
+- 实际验收：白底、黑底、棋盘格及 140px 显示尺寸。
+
+为什么不再使用洋红或纯黑：
+
+- 洋红会被 H3 烤进抗锯齿、发丝和轮廓颜色；后续换底无法恢复。旧链中 35.33% 的半透明边缘像素存在明显紫色偏差。
+- 纯黑与角色黑描边没有可辨识的 RGB 信息，会导致描边被当作背景。
+- 从原始 RGBA 直接进入灰底后，实验中的明显紫边像素降为 0%，平均边缘色度约减半。
+
+参考实现：
+
+- PNG workflow：`/data/sam3-test/workflows/V2VA_MiniMaxH3_FL2VA_TURBO8_768P_PNG.json`
+- SAM3 runner：`/data/sam3-test/scripts/run_sam3_matting.py`
+- Hybrid builder：`/data/sam3-test/scripts/build_cartoon_hybrid.py`
+- 验证实验：`/data/sam3-test/direct-gray-editing-v2-20260903-054417`
+- 方法调查：`/data/sam3-test/MATTING-METHODS-RESEARCH.md`
+
+当前限制：SAM2Matting 代码/权重为 CC BY-NC 4.0，仅用于非商业原型验证；商业发布前必须替换或获得授权。
+
+### 6.2 Direct-Gray Hybrid v2 五状态实装结果（2026-09-03）
+
+本轮产物：`/data/paint-jobs/derived/pi-pet-direct-gray-hybrid-v2-20260903-070019`
+
+| 状态 | H3 RGB 首尾 SSIM | Hybrid alpha 首尾 SSIM | 明显紫边 | WebP 大小 |
+|---|---:|---:|---:|---:|
+| idle | 0.99665 | 0.99703 | 0.0000% | 1.66 MiB |
+| thinking | 0.99452 | 0.99258 | 0.0003% | 1.61 MiB |
+| editing | 0.99615 | 0.99615 | 0.0000% | 1.86 MiB |
+| error | 0.99632 | 0.99591 | 0.0000% | 1.64 MiB |
+| offline | 0.99673 | 0.99635 | 0.0000% | 1.32 MiB |
+
+交付统一为 280×280、78 帧、约 15fps、lossless animated WebP。面向 Windows UI 主机的分发包位于：
+
+`/home/bruhw/programming/pi-pet/h3-mutsumi-gray-hybrid-v2.zip`
+
+应将压缩包内的同名目录解压到实际运行 Pi Pet/Tauri UI 的主机；Windows 默认目标为 `%USERPROFILE%\.claude\pet-data\characters\h3-mutsumi-gray-hybrid-v2`。Headless Linux 生成机不安装 Pi Pet 运行时角色包。
+
+当前 10 状态协议的临时复用映射：`reading/searching → thinking`，`running/delegating → editing`，`waiting → idle`。这只用于 MVP 实机检查，后续仍需生成五个独立动作。
+
+### 6.3 Renderer presentation update（2026-09-03）
+
+`pi-pet-mvp` 的 renderer 已支持可选 `appearance` metadata，字段为 `motion`、`uiPreset`、`artScale`、`bubble`、`stateLabel`、`identity`。优先级固定为：
+
+```text
+用户 localStorage 明确设置 > character.json appearance 建议 > 旧 renderer 默认
+```
+
+因此 Ferris 和不带 metadata 的既有角色包仍为 **Full + Classic**，保持原有外层动画与文字外观；H3 v2 包推荐：
+
+```json
+{
+  "motion": "intrinsic",
+  "uiPreset": "minimal",
+  "artScale": 1.25,
+  "bubble": "off",
+  "stateLabel": "off",
+  "identity": "hover"
+}
+```
+
+- `Intrinsic` 会关闭 wrapper transform/`pop-in`，只播放 WebP 自身动作。
+- `Subtle` 和 `Full` 仍可在右键 **Settings** 选择。
+- Art size 只缩放画面，不缩放透明窗口、气泡或文字。
+- identity HUD 使用短 `agent · project` 名称，hover 显示；右键 Settings 可设 Hidden/Always，并可 pin。稳定 session ID 始终只用于内部路由。
+- `prefers-reduced-motion: reduce` 对所有包强制关闭 CSS 外层动画。
+
+分发包已更新，SHA-256 为：
+
+```text
+c4a3ce3c4e1b203c1e9e4f5da454f2245010e8f5fad51cd76af4e98590301f4c
+```
+
+声音仍由 Clawd host 集中管理（而非每个 status-pet 子进程播放），以避免多个 session 同时完成时发生音效风暴；status-pet standalone 音效属于后续独立工作。
+
 ## 7. 验收门槛
 
 第一轮先只生成 `idle`、`thinking`、`editing`、`error`、`offline` 五个动作。满足以下条件再扩成十状态：
