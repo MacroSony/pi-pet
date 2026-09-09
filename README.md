@@ -89,7 +89,7 @@ Use the **pinned submodule commits**, not `git submodule update --remote`. Re-ru
 
 The package's `private: true` prevents accidental **npm publication**; it does not make this GitHub repository private.
 
-Historical design notes: [plan](PLAN.md), [architecture audit](ARCHITECTURE-AUDIT.md), [remote Pi design](REMOTE-PI-DESIGN.md), [animation experiments](ANIMATION-ASSET-PLAN.md). They are not a statement that every planned feature is implemented.
+Current roadmap: [PLAN.md](PLAN.md). Completed work and verification: [FINISHED.md](FINISHED.md). Historical design notes: [architecture audit](ARCHITECTURE-AUDIT.md), [remote Pi design](REMOTE-PI-DESIGN.md), [animation experiments](ANIMATION-ASSET-PLAN.md). Historical notes are not a statement that every planned feature is implemented.
 
 ## License and attribution
 
