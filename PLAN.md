@@ -1,5 +1,7 @@
 # Pi Pet / Multi-Agent Desktop Pets — 初步计划
 
+> Historical design record. The extracted implementation now lives in the root `packages/runtime/`; see [current boundary contract](docs/BOUNDARY-CONTRACT.md) and [validation/known limitations](docs/PUBLICATION.md). Earlier in-tree bridge paths and proposed features below describe their original phase.
+
 > 规划文档。目标：一个独立运行的 Multi-Agent Desktop Pet 应用。
 
 ## 1. 项目目标

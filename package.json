@@ -1,0 +1,16 @@
+{
+  "name": "pi-pet",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Phase-1 Pi Pet runtime boundary and Clawd adapter",
+  "main": "packages/runtime/index.js",
+  "types": "packages/runtime/index.d.ts",
+  "scripts": {
+    "test": "node --test packages/runtime/test/*.test.js"
+  },
+  "license": "AGPL-3.0-only",
+  "type": "commonjs",
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

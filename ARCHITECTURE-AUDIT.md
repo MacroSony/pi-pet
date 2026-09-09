@@ -1,5 +1,7 @@
 # Clawd × claude-status-pet 架构核查与 Bridge 契约
 
+> Historical design record. The extracted implementation now lives in the root `packages/runtime/`; see [current boundary contract](docs/BOUNDARY-CONTRACT.md) and [validation/known limitations](docs/PUBLICATION.md). Earlier in-tree bridge paths and proposed features below describe their original phase.
+
 > 核查日期：当前 shallow clone。本文只描述代码中已确认的行为与建议的衔接方式。
 
 ## 结论

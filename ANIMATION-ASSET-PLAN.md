@@ -225,17 +225,17 @@ ffmpeg -i h3-idle.mp4 -an \
 
 参考实现：
 
-- PNG workflow：`/data/sam3-test/workflows/V2VA_MiniMaxH3_FL2VA_TURBO8_768P_PNG.json`
-- SAM3 runner：`/data/sam3-test/scripts/run_sam3_matting.py`
-- Hybrid builder：`/data/sam3-test/scripts/build_cartoon_hybrid.py`
-- 验证实验：`/data/sam3-test/direct-gray-editing-v2-20260903-054417`
-- 方法调查：`/data/sam3-test/MATTING-METHODS-RESEARCH.md`
+- PNG workflow：`<local-matting-workspace>/workflows/V2VA_MiniMaxH3_FL2VA_TURBO8_768P_PNG.json`
+- SAM3 runner：`<local-matting-workspace>/scripts/run_sam3_matting.py`
+- Hybrid builder：`<local-matting-workspace>/scripts/build_cartoon_hybrid.py`
+- 验证实验：`<local-matting-workspace>/direct-gray-editing-v2-20260903-054417`
+- 方法调查：`<local-matting-workspace>/MATTING-METHODS-RESEARCH.md`
 
 当前限制：SAM2Matting 代码/权重为 CC BY-NC 4.0，仅用于非商业原型验证；商业发布前必须替换或获得授权。
 
 ### 6.2 Direct-Gray Hybrid v2 五状态实装结果（2026-09-03）
 
-本轮产物：`/data/paint-jobs/derived/pi-pet-direct-gray-hybrid-v2-20260903-070019`
+本轮产物：`<local-paint-output>/derived/pi-pet-direct-gray-hybrid-v2-20260903-070019`
 
 | 状态 | H3 RGB 首尾 SSIM | Hybrid alpha 首尾 SSIM | 明显紫边 | WebP 大小 |
 |---|---:|---:|---:|---:|
@@ -247,7 +247,7 @@ ffmpeg -i h3-idle.mp4 -an \
 
 交付统一为 280×280、78 帧、约 15fps、lossless animated WebP。面向 Windows UI 主机的分发包位于：
 
-`/home/bruhw/programming/pi-pet/h3-mutsumi-gray-hybrid-v2.zip`
+`./h3-mutsumi-gray-hybrid-v2.zip`
 
 应将压缩包内的同名目录解压到实际运行 Pi Pet/Tauri UI 的主机；Windows 默认目标为 `%USERPROFILE%\.claude\pet-data\characters\h3-mutsumi-gray-hybrid-v2`。Headless Linux 生成机不安装 Pi Pet 运行时角色包。
 

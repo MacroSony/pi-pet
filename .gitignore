@@ -23,3 +23,18 @@ bridge-status/
 Thumbs.db
 .vscode/
 .idea/
+
+# Local subagent experiments and unpublished character-generation inputs
+/.debug-race/
+/.step*-race/
+/.step3.5/
+/.step4/
+/prompts/
+/workflows/
+
+# Local credentials / runtime state (never part of source releases)
+.env
+.env.*
+!.env.example
+/auth.json
+/clawd-remote.json

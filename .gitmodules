@@ -1,8 +1,8 @@
 [submodule "clawd-on-desk"]
 	path = clawd-on-desk
-	url = git@github.com:MacroSony/pi-pet-clawd.git
+	url = https://github.com/MacroSony/pi-pet-clawd.git
 	branch = pi-pet-bridge
 [submodule "claude-status-pet"]
 	path = claude-status-pet
-	url = git@github.com:MacroSony/pi-pet-status-pet.git
+	url = https://github.com/MacroSony/pi-pet-status-pet.git
 	branch = pi-pet-mvp
