@@ -149,6 +149,21 @@ function toolCallDedupKey(toolCallId) {
   return safe ? `tc_${safe}` : undefined;
 }
 
+function buildRemoteExpressionBody({ rawSessionId, toolCallId, params, now = Date.now }) {
+  const body = {
+    schemaVersion: "1",
+    kind: "pet_expression",
+    rawSessionId,
+    agentId: "pi",
+    createdAtMs: now(),
+  };
+  const dedupKey = toolCallDedupKey(toolCallId);
+  if (dedupKey) body.dedupKey = dedupKey;
+  if (params && params.text !== undefined) body.text = params.text;
+  if (params && params.emotion !== undefined) body.emotion = params.emotion;
+  return body;
+}
+
 function postRemoteExpression(remoteConfig, bodyObj, signal) {
   return new Promise((resolve) => {
     let bodyJson;
@@ -261,6 +276,11 @@ function postRemoteExpression(remoteConfig, bodyObj, signal) {
   });
 }
 
+async function dispatchRemoteExpression(remoteConfig, { rawSessionId, toolCallId, params, signal, now }) {
+  const remoteBody = buildRemoteExpressionBody({ rawSessionId, toolCallId, params, now });
+  return postRemoteExpression(remoteConfig, remoteBody, signal);
+}
+
 function formatResult(receipt) {
   return {
     content: [{ type: "text", text: JSON.stringify(receipt) }],
@@ -327,19 +347,12 @@ function piPetExtension(pi) {
           return formatResult(annotatedReceipt);
         }
 
-        const remoteBody = {
-          schemaVersion: "1",
-          kind: "pet_expression",
+        const remoteReceipt = await dispatchRemoteExpression(remoteConfig, {
           rawSessionId,
-          agentId: "pi",
-          createdAtMs: Date.now(),
-        };
-        const dedupKey = toolCallDedupKey(toolCallId);
-        if (dedupKey) remoteBody.dedupKey = dedupKey;
-        if (params && params.text !== undefined) remoteBody.text = params.text;
-        if (params && params.emotion !== undefined) remoteBody.emotion = params.emotion;
-
-        const remoteReceipt = await postRemoteExpression(remoteConfig, remoteBody, signal);
+          toolCallId,
+          params,
+          signal,
+        });
         return formatResult(remoteReceipt);
       }
 
@@ -369,19 +382,12 @@ function piPetExtension(pi) {
         return formatResult(receipt);
       }
 
-      const remoteBody = {
-        schemaVersion: "1",
-        kind: "pet_expression",
+      const remoteReceipt = await dispatchRemoteExpression(remoteConfig, {
         rawSessionId,
-        agentId: "pi",
-        createdAtMs: Date.now(),
-      };
-      const dedupKey = toolCallDedupKey(toolCallId);
-      if (dedupKey) remoteBody.dedupKey = dedupKey;
-      if (params && params.text !== undefined) remoteBody.text = params.text;
-      if (params && params.emotion !== undefined) remoteBody.emotion = params.emotion;
-
-      const remoteReceipt = await postRemoteExpression(remoteConfig, remoteBody, signal);
+        toolCallId,
+        params,
+        signal,
+      });
       return formatResult(remoteReceipt);
     },
   });
@@ -395,3 +401,5 @@ module.exports.loadRemoteConfig = loadRemoteConfig;
 module.exports.validateExpression = validateExpression;
 module.exports.isIdentityOrSessionRejection = isIdentityOrSessionRejection;
 module.exports.postRemoteExpression = postRemoteExpression;
+module.exports.buildRemoteExpressionBody = buildRemoteExpressionBody;
+module.exports.toolCallDedupKey = toolCallDedupKey;

@@ -4,15 +4,13 @@
 // Keep all Clawd field names and lifecycle interpretation here; the runtime
 // below this file only receives neutral PetStatus values.
 
-const crypto = require("node:crypto");
-const path = require("node:path");
 const { createPetRuntime, defaultStatusDir } = require("../runtime");
+const { derivePetId } = require("../identity");
 
 const DEFAULT_AGENT_IDS = ["pi"];
-const PET_ID_PREFIX = "pet_";
-const PET_ID_HASH_LENGTH = 24;
 const MAX_LABEL_LENGTH = 120;
 const MAX_DETAIL_LENGTH = 180;
+const stablePetSessionId = derivePetId;
 
 function normalizeText(value, maxLength = MAX_DETAIL_LENGTH) {
   if (typeof value !== "string") return "";
@@ -30,22 +28,6 @@ function normalizeAgentIds(value) {
     .map((item) => item.trim())
     .filter(Boolean);
   return new Set(ids.length > 0 ? ids : DEFAULT_AGENT_IDS);
-}
-
-// This formula is intentionally unchanged from Clawd's in-tree bridge.
-function stablePetSessionId(entry) {
-  const profileId = normalizeText(entry && entry.profileId, 256) || "local";
-  const agentId = normalizeText(entry && entry.agentId, 256) || "unknown";
-  const rawSessionId = normalizeText(
-    (entry && entry.rawSessionId) || (entry && entry.id),
-    4096
-  ) || "unknown";
-  const digest = crypto
-    .createHash("sha256")
-    .update(`${profileId}\0${agentId}\0${rawSessionId}`, "utf8")
-    .digest("hex")
-    .slice(0, PET_ID_HASH_LENGTH);
-  return `${PET_ID_PREFIX}${digest}`;
 }
 
 function statusForTool(toolName) {

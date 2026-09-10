@@ -16,31 +16,7 @@ const GC_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 const VALID_EMOTIONS = Object.freeze(["happy", "shy", "shocked", "sad", "celebrate"]);
 const VALID_EMOTIONS_SET = new Set(VALID_EMOTIONS);
 
-function normalizeIdentityText(value, maxLength = 256) {
-  if (typeof value !== "string") return "";
-  return value.replace(/[\0\r\n]+/g, " ").trim().slice(0, maxLength);
-}
-
-function derivePetId(identity = {}) {
-  const profileId = normalizeIdentityText(identity && identity.profileId, 256) || "local";
-  const agentId = normalizeIdentityText(identity && identity.agentId, 256) || "unknown";
-  const rawSessionId = normalizeIdentityText(
-    (identity && identity.rawSessionId) || (identity && identity.id),
-    4096
-  ) || "unknown";
-
-  const digest = crypto
-    .createHash("sha256")
-    .update(`${profileId}\0${agentId}\0${rawSessionId}`, "utf8")
-    .digest("hex")
-    .slice(0, 24);
-
-  return `pet_${digest}`;
-}
-
-function isSafePetId(petId) {
-  return typeof petId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(petId) && !petId.includes("..");
-}
+const { derivePetId, isSafePetId } = require("./identity");
 
 function validateExpression(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {

@@ -394,3 +394,50 @@ test("rejects payload exceeding 16 KiB limit early", async () => {
     await testServer.close();
   }
 });
+
+test("remote request builder emits the canonical wire payload", () => {
+  const fixedTime = 1700000000000;
+  const body = extension.buildRemoteExpressionBody({
+    rawSessionId: "ses-123",
+    toolCallId: "call:abc/123",
+    params: { text: "hello", emotion: "happy" },
+    now: () => fixedTime,
+  });
+
+  assert.deepEqual(body, {
+    schemaVersion: "1",
+    kind: "pet_expression",
+    rawSessionId: "ses-123",
+    agentId: "pi",
+    createdAtMs: fixedTime,
+    dedupKey: "tc_call_abc_123",
+    text: "hello",
+    emotion: "happy",
+  });
+
+  assert.equal(extension.toolCallDedupKey(""), undefined);
+  assert.equal(extension.toolCallDedupKey("a".repeat(100)), `tc_${"a".repeat(55)}`);
+});
+
+test("remote fallback predicate only accepts identity and session rejections", () => {
+  for (const reason of [
+    "InvalidPetIdentity: malformed",
+    "UnknownPetIdentity: missing",
+    "SessionClosed: ended",
+  ]) {
+    assert.equal(
+      extension.isIdentityOrSessionRejection({ status: "rejected", reason }),
+      true,
+      reason
+    );
+  }
+
+  for (const receipt of [
+    { status: "rejected", reason: "SchemaValidationError: bad emotion" },
+    { status: "expired", reason: "UnknownPetIdentity: stale command" },
+    { status: "failed", reason: "SessionClosed: I/O failed" },
+    { status: "rejected" },
+  ]) {
+    assert.equal(extension.isIdentityOrSessionRejection(receipt), false, JSON.stringify(receipt));
+  }
+});

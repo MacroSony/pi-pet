@@ -1,32 +1,60 @@
 "use strict";
 
-// Parity guard: interaction.derivePetId must stay byte-identical to the Clawd
-// adapter's stablePetSessionId — it is the single source of truth for pet
-// identity, and status files on disk are named by it. If these diverge,
-// expressExpression can never find the active session.
+// Identity is shared by status ingestion and expression delivery. If these
+// exports diverge, expressExpression cannot find the active status file.
 
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 
-const { derivePetId } = require("../interaction");
-const { stablePetSessionId } = require("../adapters/clawd");
+const identity = require("../identity");
+const interaction = require("../interaction");
+const clawd = require("../adapters/clawd");
+const root = require("..");
 
-test("derivePetId matches stablePetSessionId byte-for-byte", () => {
+function legacyPetId(value = {}) {
+  const normalize = (text, maxLength) =>
+    typeof text === "string"
+      ? text.replace(/[\0\r\n]+/g, " ").trim().slice(0, maxLength)
+      : "";
+  const profileId = normalize(value && value.profileId, 256) || "local";
+  const agentId = normalize(value && value.agentId, 256) || "unknown";
+  const rawSessionId = normalize(
+    (value && value.rawSessionId) || (value && value.id),
+    4096
+  ) || "unknown";
+  const digest = crypto
+    .createHash("sha256")
+    .update(`${profileId}\0${agentId}\0${rawSessionId}`, "utf8")
+    .digest("hex")
+    .slice(0, 24);
+  return `pet_${digest}`;
+}
+
+test("runtime surfaces share one pet identity implementation", () => {
+  assert.equal(interaction.derivePetId, identity.derivePetId);
+  assert.equal(clawd.stablePetSessionId, identity.derivePetId);
+  assert.equal(root.derivePetId, identity.derivePetId);
+  assert.equal(root.stablePetSessionId, identity.derivePetId);
+});
+
+test("shared identity preserves the legacy byte-for-byte formula", () => {
   const cases = [
     { profileId: "local", agentId: "pi", rawSessionId: "abc-123" },
-    // mixed-case agentId must NOT be lowercased (adapter does not)
     { profileId: "bruhw-pc2", agentId: "Pi", rawSessionId: "ses_X/yz" },
-    // id fallback + empty components hitting defaults
     { profileId: "", agentId: "", id: "fallback-id" },
-    // control-char normalization parity
     { profileId: "  padded\t", agentId: "pi", rawSessionId: "a\0b\nc" },
+    {},
+    null,
+    { profileId: "x".repeat(500), agentId: "y".repeat(500), rawSessionId: "z".repeat(5000) },
   ];
-  for (const identity of cases) {
-    assert.equal(derivePetId(identity), stablePetSessionId(identity), JSON.stringify(identity));
+
+  for (const value of cases) {
+    assert.equal(identity.derivePetId(value), legacyPetId(value), JSON.stringify(value));
   }
 });
 
 test("derivePetId output shape", () => {
-  const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "x" });
+  const petId = identity.derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "x" });
   assert.match(petId, /^pet_[a-f0-9]{24}$/);
 });
