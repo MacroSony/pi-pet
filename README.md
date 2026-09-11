@@ -19,12 +19,12 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - Stable per-session identities, including remote profiles.
 - Tool/activity display, independent windows, animation transitions and local reactions.
 - Pi `pet_express(text?, emotion?)` with validated event/receipt delivery and renderer bubbles, both locally and through the existing Clawd Remote SSH path.
-- Local desktop-to-agent input (Pi own-session inbox v1): send text instructions from the desktop pet UI via Clawd `POST /pet-inbox`, queued to `~/.pi-pet/inbox/`, and consumed into the live Pi session via `pi.sendUserMessage`.
+- Local and Secure Remote SSH desktop-to-agent input (Pi own-session inbox v1): send text from the pet UI through local Clawd enqueue, then consume it in the bound Pi session via a local mailbox or capability-scoped remote claim/settle and `pi.sendUserMessage`.
 - Presentation-write deduplication, disconnect/reconnect handling and renderer relaunch rules.
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.
 
-**Not implemented yet:** remote SSH inbox delivery, remote capability tokens, multi-agent / peer messaging (A2A), Team/Board spatial coordination, position-query or semantic movement tools, TTS, receipt polling UI, and renderer playback acknowledgement. See [the implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
+**Not implemented yet:** multi-agent / peer messaging (A2A), Team/Board spatial coordination, position-query or semantic movement tools, TTS, and renderer playback acknowledgement. Remote Pi inbox delivery and terminal receipt polling are implemented and automatically tested, but still require real SSH-tunnel/live-Pi/GUI smoke before release claims. See [the implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
 
 ## Source checkout
 

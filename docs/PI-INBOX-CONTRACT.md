@@ -1,14 +1,14 @@
-# Pi Pet Inbox Contract v1 (Local Own-Session Desktop Input)
+# Pi Pet Inbox Contract v1 (Local + Secure Remote SSH Own-Session Input)
 
-> Scope: Local Pi own-session desktop-to-agent input (`v1`).
-> Implementation: `packages/runtime/inbox.js`, `packages/pi-extension/index.js`, `clawd-on-desk/src/server-route-pet-inbox.js`, `claude-status-pet/pet-app/src-tauri/src/lib.rs`.
-> Status: Local automated vertical slice implemented and verified; live Pi-process and GUI smoke tests remain.
+> Scope: Pi own-session desktop-to-agent input (`v1`) for local and Clawd-managed Secure Remote SSH sessions.
+> Implementation: `packages/runtime/inbox.js`, `packages/pi-extension/index.js`, `clawd-on-desk/src/server-route-pet-inbox.js`, `clawd-on-desk/hooks/pi-extension-core.js`, `claude-status-pet/pet-app/src-tauri/src/lib.rs`.
+> Status: Local and remote automated vertical slices implemented and verified; real live-Pi, SSH-tunnel and GUI smoke tests remain.
 
 ---
 
 ## 1. Architecture & End-to-End Flow
 
-Pi Pet Inbox v1 provides a local, desktop-to-agent message path allowing a user to send text instructions directly to the specific live Pi agent session represented by a desktop pet.
+Pi Pet Inbox v1 lets a user send text instructions directly to the specific live Pi agent session represented by a desktop pet. Enqueue and receipt query always enter through local Clawd. A local Pi consumer reads the runtime mailbox directly; a managed remote Pi consumer uses capability-scoped claim/settle over the existing SSH reverse tunnel.
 
 ```text
 [ Desktop Pet UI (Tauri Webview) ]
@@ -28,11 +28,18 @@ Pi Pet Inbox v1 provides a local, desktop-to-agent message path allowing a user 
    │ writes initial receipt: ~/.pi-pet/receipts/rcpt-user-<commandId>.json ("queued")
    ▲
    │ polls own-session inbox (~500ms idle / 0ms drain)
-[ Pi Extension Inbox Consumer (`packages/pi-extension/index.js`) ]
+[ Local Pi Extension Inbox Consumer (`packages/pi-extension/index.js`) ]
    │ on "session_start", resolves rawSessionId -> derives matching petId
    │ atomic claim: moves pending/ to claimed/<commandId>.json (claimToken)
    │ dispatches: pi.sendUserMessage(text, { deliverAs: 'followUp', expandPromptTemplates: false })
    │ settles receipt: ~/.pi-pet/receipts/rcpt-user-<commandId>.json ("dispatched")
+
+Remote alternative after local enqueue:
+[ Clawd-managed Remote Pi Extension (`hooks/pi-extension-core.js`) ]
+   │ advertises an attach-scoped capability through authenticated /state
+   │ POST /pet-inbox/claim and /pet-inbox/settle through the existing SSH -R tunnel
+   │ dispatches the same exact pi.sendUserMessage(...) call
+   │ retries settlement only; never re-dispatches a claimed user message
 ```
 
 ---
@@ -60,6 +67,7 @@ Pi Pet Inbox v1 provides a local, desktop-to-agent message path allowing a user 
   - Resolves Clawd local port from `~/.clawd/runtime.json` (or `CLAWD_RUNTIME_CONFIG`), ensuring `app == "clawd-on-desk"`.
   - Constructs public HTTP payload and executes a blocking HTTP POST to `http://127.0.0.1:<port>/pet-inbox` (5-second timeout, 64 KiB response cap).
   - Enforces `x-clawd-server: clawd-on-desk` header on response.
+  - Queries the same bound `pet_id` plus `request_id` through local-only `POST /pet-inbox/receipt`; the renderer polls conservatively for up to 125 seconds and prevents stale poll generations from overwriting a newer send.
 
 ---
 
@@ -98,6 +106,22 @@ Pi Pet Inbox v1 provides a local, desktop-to-agent message path allowing a user 
 ### 3.3 Strict Key Validation & `createdAtMs` Rejection
 - Any unknown property present in the request body is rejected with `HTTP 400 Bad Request` (`{"status": "rejected", "reason": "Unknown property: \"<key>\""}`).
 - **`createdAtMs` is strictly forbidden in public requests**: `createdAtMs` is rejected as an unknown property. Creation timestamps are exclusively assigned by the coordinator/runtime at ingestion (`nowMs`).
+
+### 3.4 Secure Remote SSH Consumer Protocol
+
+Remote desktop messages still enter through the local public endpoint above. The remote Pi process cannot call `/pet-inbox` to enqueue a user message and cannot query `/pet-inbox/receipt`.
+
+A Clawd-managed remote Pi extension instead performs this authenticated sequence through the existing reverse tunnel:
+
+1. On each valid remote extension attach, generate a fresh 32-byte token and add `pet_inbox_capability: { version: 1, receiveUserMessage: true, token }` to authenticated `/state` payloads.
+2. Clawd binds the token in memory to the trusted SSH `profileId`, agent `pi`, and exact canonical `rawSessionId`. A later attach for the same identity rotates it; a real `SessionEnd` revokes it. Reload does not retire the live pet, but the replacement attach rotates the token.
+3. The extension polls `POST /pet-inbox/claim` with exactly `schemaVersion`, `kind: "user_message_claim"`, canonical `rawSessionId`, and `capabilityToken`.
+4. After validating the claimed response and rechecking TTL plus the 60-second claim lease, it calls the same exact `pi.sendUserMessage(...)` API as the local consumer.
+5. It calls `POST /pet-inbox/settle` with the bound identity, command/claim tokens, and `dispatched`, `failed`, or `expired`.
+
+Both consumer routes require the Secure Remote SSH routing nonce and a trusted remote profile. Local calls fail closed with 403; missing/wrong ingress nonce receives generic 404. The remote consumer uses only the identity-pinned loopback tunnel port, never scans Clawd ports, caps requests at 16 KiB and responses at 64 KiB, uses a 5-second timeout, and accepts responses only with `x-clawd-server: clawd-on-desk`.
+
+A failed settlement transport does not cause re-dispatch. The remote consumer retains only an in-memory pending settlement, blocks new claims, and retries that settlement until the claim's 60-second deadline. If it cannot settle in time, coordinator/runtime stale cleanup records `failed` with delivery-unknown and never requeues the instruction.
 
 ---
 
@@ -185,7 +209,7 @@ All runtime artifacts reside in `<dataDir>` (`~/.pi-pet` by default, or `PI_PET_
   "expiresAtMs": 1757419260000
 }
 ```
-*Note*: The filename uses `String(createdAtMs).padStart(16, "0") + "-" + commandId + ".json"` to ensure strict lexicographical FIFO sorting during directory scans.
+*Note*: The filename uses `String(createdAtMs).padStart(16, "0") + "-" + commandId + ".json"` so directory scans sort by creation millisecond and then deterministically by command ID; v1 does not claim insertion-order FIFO for same-millisecond ties.
 
 ### 5.2 Claimed Message File (`<dataDir>/inbox/<petId>/claimed/<commandId>.json`)
 ```json
@@ -311,14 +335,23 @@ pi.sendUserMessage(text, {
 
 ## 8. Security Boundaries & Current Limitations
 
-### 8.1 Trust Model & Capability Tokens
-- **Same-User Prototype Limitation**: Pi Pet assumes a single-operator workstation environment where Clawd, Pi, and the Tauri desktop renderer run under the same OS user account and share access to `~/.pi-pet`.
-- **No Capability Tokens**: Inbox v1 does not use bearer tokens, signed macaroons, or capability delegation. Access is guarded by local loopback binding (`127.0.0.1`), active session verification in `status/status-<petId>.json`, and file permission boundaries.
+### 8.1 Local Trust Model
+- Local enqueue remains a same-user, loopback-only boundary. The Tauri renderer submits only text and request ID; native state injects the opaque pet ID.
+- Local Pi processes read their own filesystem mailbox. They do not use a capability token in v1.
 
-### 8.2 Remote Support Deferred
-- `POST /pet-inbox` is rejected on remote SSH ingress endpoints.
-- Remote agent-to-agent (A2A) inbox messaging and remote client injection are deferred to future milestones.
+### 8.2 Remote Capability Model
+- Remote enqueue remains forbidden. Only the local desktop/coordinator may create a user instruction.
+- Remote claim/settle requires both the existing SSH routing nonce and a separate 256-bit session capability registered through trusted `/state` traffic.
+- Capability state is coordinator-memory-only and scoped to exact profile + `pi` + canonical raw session. It is regenerated per attach, rotated by replacement registration and revoked on a real `SessionEnd`.
+- Capability tokens are intentionally not returned by extension lifecycle APIs or written to logs. They appear only in the authenticated state/claim/settle protocol.
+- This capability grants only own-session user-message claim/settle. It grants no peer messaging, Team, Board, transcript, provider, process or filesystem authority.
 
 ### 8.3 UI Receipt Polling
-- The runtime provides the `getUserMessageReceipt` API to support UI polling of message receipts (`rcpt-user-<commandId>.json`) from `queued` to terminal `dispatched` or `failed`.
-- Querying triggers stale claim cleanup, ensuring that UI queries against disconnected or crashed consumers promptly observe terminal `failed` (`delivery-unknown`) status without requiring a subsequent claim cycle.
+- Runtime `getUserMessageReceipt` and local-only Clawd `POST /pet-inbox/receipt` expose the matching pet/command receipt from `queued` to terminal `dispatched`, `failed`, `expired`, or `rejected`.
+- Querying triggers pending expiry and stale-claim cleanup, so a disconnected or crashed consumer eventually becomes visible as `expired` or `failed` (delivery-unknown) without requiring a replay.
+- The renderer's 125-second polling budget may end in a conservative timeout message. Timeout is not proof of dispatch or failure.
+
+### 8.4 Remaining Evidence and Deferred Scope
+- Automated tests do not replace a real SSH tunnel disconnect/reconnect test, live Pi process dispatch, or platform GUI smoke.
+- Remote peer/A2A messaging is not part of this user-message capability and remains deferred.
+- `dispatched` means only that `pi.sendUserMessage` returned without throwing; it does not prove the model ran, replied, completed a task, or that the renderer played an acknowledgement.

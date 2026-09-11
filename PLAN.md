@@ -41,7 +41,7 @@ Desktop pets + team board
 - Tauri 动画、气泡、reaction、拖动、位置保存、idle/sleep watchdog。
 - Phase A interaction envelope、TTL、dedup、receipt 和原子文件写入。
 - Pi `pet_express(text?, emotion?)`，包含本地和 Remote SSH expression delivery。
-- Local Pi own-session inbox 垂直切片（`enqueueUserMessage` / `claimNextUserMessage` / `settleUserMessage` / pi-extension inbox consumer loop 与 `pi.sendUserMessage` 闭环）。
+- Local 与 Secure Remote SSH Pi own-session inbox 垂直切片（本地 enqueue、runtime claim/settle、capability-scoped 远端 consumer、`pi.sendUserMessage` 与终态 receipt UI 闭环）。
 - root / Clawd adapter / renderer 三仓公开和 CI / focused tests。
 
 精确实现证据和仍未完成的真机 smoke 见 [FINISHED.md](FINISHED.md)。
@@ -69,7 +69,7 @@ ChildActivity  某 Session 内短命的一次性子任务表现，不是 Session
 
 ## 4. 当前关键路径
 
-### Milestone 1 — Pi own-session inbox（进行中）
+### Milestone 1 — Pi own-session inbox（实现完成；真机验收待完成）
 
 先完成“用户通过桌宠给原 Pi session 发消息”的可靠闭环：
 
@@ -92,17 +92,23 @@ Tauri input
 - **真实终态定义**：终态严格为 `dispatched` / `failed` / `expired` / `rejected`，不在 runtime/extension 派发层伪称 `delivered`。
 - **Pi extension 消费循环**：`attachInboxConsumer` 监听 `session_start` / `session_shutdown`；连续消息快速 drain 紧接着按间隔轮询；派发前重检 TTL；通过 `pi.sendUserMessage(text, { deliverAs: 'followUp', expandPromptTemplates: false })` 送入；异常全捕获不导致 Pi 主进程崩溃。
 
-#### Milestone 1b — Remote Pi inbox、capability 握手与断线/终态可见 receipts（发布硬化中 / 待完成）
+#### Milestone 1b — Remote Pi inbox、capability 握手与断线/终态可见 receipts（已实现 / 自动测试通过）
 
-Milestone 1 尚未整体完成，剩余发布级工作包括：
+已完成：
 
-- **Remote Pi inbox 路由**：通过现有 Clawd Secure Remote SSH transport 转发远程 Pi session 的 mailbox claim/settle 与 user message 入队，不开放公网端口。
-- **Capability token 握手**：coordinator 与 session 间的能力协商与 token 校验（`receive_user_message` 等）。
-- **断线重连与 Receipt 可见性**：断线重连期间状态可见、不丢消息、消息过期可见 receipt。
-- **Receipt 可见性**：UI 后续查询终态 receipt，明确区分初始 `queued`、Pi API 调用成功的 `dispatched` 与 `failed/expired`；不把派发误报为 Agent 已完成任务。
-- **真机 Smoke 验收**：真实 Windows/macOS/Linux Tauri 界面与真实 live Pi 进程的手工 smoke 测试。
+- **Remote Pi inbox 路由**：用户仍向本机 Clawd `POST /pet-inbox` 入队；远端 Pi extension 通过既有 Secure Remote SSH reverse tunnel 主动调用受限 `/pet-inbox/claim` 与 `/pet-inbox/settle`，不开放公网端口，也不允许远端直接伪造用户入队。
+- **Capability token 握手与轮换**：每次 remote extension attach 生成独立 256-bit token，通过 authenticated `/state` 注册，并绑定 trusted profile、`pi` 和 exact canonical raw session ID；reload/新 attach 轮换，真实 `SessionEnd` 撤销。
+- **断线与 at-most-once**：claim-before-dispatch；settle 传输失败只重试回执而不重派用户消息；超过 60 秒 claim lease 后由 coordinator/runtime 终结为 `failed`（delivery-unknown），绝不静默重放。
+- **Receipt 可见性**：Tauri 只从本机 `/pet-inbox/receipt` 查询，renderer 最长轮询 125 秒；明确区分 `queued`、Pi API 非抛错调用后的 `dispatched`、`failed/expired/rejected` 与保守 timeout，不把派发误报为 Agent 已完成任务。
+- **身份统一**：Clawd state、local consumer 与 remote consumer 使用同一个 canonical `pi:<sessionId>` raw identity，已带 `pi:` 时不重复添加。
 
-**验收标准：**一句输入只进入目标 Pi session 一次；其他 session 不受影响；忙时排队行为可见；本地和远端断线重连不会重复执行。
+剩余发布级验收：
+
+- **真机 Smoke**：真实 live Pi + Tauri GUI 的中文输入、session 切换、waiting/error 气泡恢复与 dedup。
+- **真实 SSH Smoke**：真实 tunnel 断开/恢复、Clawd 重启后 heartbeat 重注册 capability、token 轮换/撤销、终态 receipt 与无重复派发。
+- **跨平台 GUI**：至少完成目标发布平台的 Windows/macOS/Linux 手工检查；自动测试不能代替这些证据。
+
+**验收标准：**自动 contract 已满足“一句输入最多进入目标 Pi session 一次、其他 session 不受影响、断线不重放”；发布声明仍以真机 smoke 完成为准。
 
 ### Milestone 2 — Session catalog 与有限 peer messaging
 
@@ -253,12 +259,13 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 
 1. 校准并冻结 Pi inbox / peer / Team contract。（已完成）
 2. 实现 Local Pi own-session inbox 垂直切片。（已完成）
-3. 补齐 Remote Pi inbox、capability 握手与断线/终态可见 receipts（Milestone 1b 发布硬化）。
-4. 加脱敏 session catalog、`pet_send`、receipt 与来源气泡（Milestone 2）。
-5. 加静态 Team、leader ACL 和结构化 Board（Milestone 3）。
-6. 加位置回报、`huddle` / `dismiss` 语义布局（Milestone 4）。
-7. 做 Remote Pi 全链硬化与跨机 Team 验证。
-8. 实现 OpenCode adapter。
-9. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
-10. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
-11. 最后再考虑 Claude、Codex、复杂社交和自由白板。
+3. 完成 Remote Pi inbox、capability 握手与断线/终态可见 receipts 的自动化实现。（已完成）
+4. 做 Milestone 1 真机 live Pi / GUI / SSH tunnel smoke；可与下一项协议工作并行。
+5. 加脱敏 session catalog、`pet_send`、receipt 与来源气泡（Milestone 2）。
+6. 加静态 Team、leader ACL 和结构化 Board（Milestone 3）。
+7. 加位置回报、`huddle` / `dismiss` 语义布局（Milestone 4）。
+8. 做跨机 Team 验证。
+9. 实现 OpenCode adapter。
+10. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
+11. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
+12. 最后再考虑 Claude、Codex、复杂社交和自由白板。

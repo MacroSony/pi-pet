@@ -2,6 +2,43 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-09 — Secure Remote Pi inbox and terminal receipt visibility
+
+### Coordinator and capability boundary
+
+- Kept user enqueue local-only at Clawd `POST /pet-inbox`; Secure Remote SSH ingress still rejects remote enqueue and receipt queries.
+- Added nonce-gated remote-consumer endpoints over the existing SSH reverse tunnel:
+  - `POST /pet-inbox/claim`
+  - `POST /pet-inbox/settle`
+- Added an in-memory capability registry bound to trusted `profileId`, agent `pi`, and exact canonical raw session ID.
+- The managed remote Pi extension generates a fresh 256-bit token per attach, advertises it only through authenticated `/state`, rotates it on a new attach/reload, and causes a real `SessionEnd` to revoke it.
+- Capability lookup, pet identity derivation and ingress all fail closed; remote consumers cannot select a different profile, harness, raw session or pet ID.
+
+### Managed remote Pi consumer
+
+- Added remote-only polling to Clawd's managed `hooks/pi-extension-core.js`; local Pi processes do not start this second consumer.
+- The consumer uses only the pinned `clawd-remote.json` port and routing nonce. It never scans fallback ports, validates the Clawd response identity header, caps requests at 16 KiB and responses at 64 KiB, and uses a 5-second transport timeout.
+- Canonical identity is shared with `/state`: raw Pi IDs become `pi:<sessionId>` and already-prefixed IDs are not double-prefixed; empty/default IDs never poll.
+- Claimed text is dispatched with the exact call `pi.sendUserMessage(text, { deliverAs: "followUp", expandPromptTemplates: false })` after TTL and claim-lease checks.
+- Settle transport/5xx failures retry only the receipt while blocking further claims; they never call `sendUserMessage` twice. At the 60-second lease boundary the consumer abandons settlement and lets coordinator/runtime surface `failed` with delivery-unknown rather than replaying.
+- Reload/shutdown stops and unrefs polling timers; attach-local state keeps multiple Pi processes isolated.
+
+### Receipt UI and disconnect visibility
+
+- Added runtime `getUserMessageReceipt(options)` with strict pet/command matching, pending expiration, stale-claim cleanup, terminal non-downgrade and I/O evidence preservation.
+- Added local-only Clawd `POST /pet-inbox/receipt`; remote ingress cannot query arbitrary receipts.
+- Tauri validates Clawd's server identity and response cap for receipt queries. The renderer polls for up to 125 seconds, preserves conservative `queued`/not-found/transient states, and uses generation guards so an older request cannot overwrite a newer send.
+- UI wording treats `dispatched` only as a non-throwing handoff to Pi, never as task completion or agent reply.
+
+### Verification and remaining evidence
+
+- Root runtime/Pi-extension suites: **122/122 passed**.
+- Clawd remote inbox route/ingress focused suite: **68/68 passed**.
+- Clawd managed Pi extension, installer, remote deploy, state route, ingress and coordinator suites: **408/408 passed**.
+- Renderer Rust tests: **83/83 passed**; renderer JavaScript tests: **46/46 passed**; JavaScript syntax checks passed.
+- Clawd full suite reached **9,338 passed, 5 failed, 52 skipped**. The same five unrelated fork-baseline failures remain in recap source assertions and remote layout/path-isolation tests; no files implicated by those failures were changed here.
+- Automated contract coverage is complete for the Milestone 1b implementation. Real live-Pi, Tauri GUI and SSH tunnel disconnect/reconnect smoke remain required before a release-level claim.
+
 ## 2026-09-09 — Local Pi own-session inbox vertical slice
 
 ### Runtime inbox architecture and contracts
@@ -43,10 +80,10 @@
 - Clawd focused inbox/expression/remote-ingress suites: **40/40 passed**.
 - Renderer Rust tests: **74/74 passed**; renderer JavaScript tests: **34/34 passed**; JavaScript syntax checks passed.
 - Root and both nested repositories passed `git diff --check`.
-- Scope limitations and remaining verification:
-  - This vertical slice implements and verifies local Pi own-session inbox delivery only.
-  - Clawd Remote SSH ingress transport for remote Pi inboxes, capability token handshake, and reconnect-visible terminal receipts remain in progress for Milestone 1 release hardening.
-  - Manual GUI smoke testing and real live Pi process verification remain to be completed.
+- Scope at this checkpoint:
+  - This original vertical slice implemented and verified local Pi own-session inbox delivery only.
+  - Secure Remote SSH claim/settle, capability handshake and reconnect-visible terminal receipts were completed in the later entry above.
+  - Manual GUI, real live Pi and real SSH tunnel smoke testing remain to be completed.
 
 ## 2026-09-09 — Phase A/B interaction and Pi expression delivery
 

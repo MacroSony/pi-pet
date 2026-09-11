@@ -130,3 +130,7 @@ The extension automatically attaches an inbox consumer loop when Pi initializes 
    - On successful invocation, settles receipt to `status: "dispatched"`.
    - On synchronous exception, catches error, settles receipt to `status: "failed"`, and resumes loop without crashing the Pi process.
    - Claimed messages are never requeued (at-most-once delivery). Stale claims older than 60s are swept to terminal `failed` (`delivery-unknown`).
+
+## Secure Remote SSH Inbox Consumption
+
+Remote Pi sessions use Clawd's separately managed extension (`clawd-on-desk/hooks/pi-extension-core.js`), not the local filesystem consumer in this package. The desktop still enqueues through local Clawd; the remote extension advertises an attach-scoped capability over authenticated `/state`, then claim/settle polls through the existing SSH reverse tunnel. Settle retries never re-invoke `pi.sendUserMessage`. See [the inbox contract](../../docs/PI-INBOX-CONTRACT.md) for the exact trust and receipt semantics.
