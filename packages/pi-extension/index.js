@@ -686,8 +686,12 @@ function attachInboxConsumer(pi, options = {}) {
   };
 }
 
-function piPetExtension(pi) {
-  const { Type } = require("typebox");
+function piPetExtension(pi, dependencies = {}) {
+  // Normal Pi discovery loads index.ts, which imports Pi's bundled TypeBox and
+  // injects it here. The CommonJS fallback remains for direct Node consumers
+  // and tests, but production loading must not depend on extension-local
+  // node_modules.
+  const Type = dependencies.Type || require("typebox").Type;
 
   if (pi && typeof pi.registerTool === "function") {
     pi.registerTool({
