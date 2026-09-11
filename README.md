@@ -43,7 +43,24 @@ cd claude-status-pet/pet-app
 npm run build
 ```
 
-Then, from the root checkout:
+Install the separate Pi Pet extension before testing local desktop-to-Pi messages. It is a sibling of Clawd's own Pi integration under `~/.pi/agent/extensions`, not a replacement for it. On Windows PowerShell, from the root checkout:
+
+```powershell
+$extensionRoot = Join-Path $HOME ".pi\agent\extensions"
+New-Item -ItemType Directory -Force -Path $extensionRoot | Out-Null
+New-Item -ItemType Junction -Path (Join-Path $extensionRoot "pi-pet") -Target (Resolve-Path .\packages\pi-extension)
+$env:PI_PET_RUNTIME_MODULE = (Resolve-Path .\packages\runtime\interaction.js).Path
+```
+
+On POSIX shells:
+
+```sh
+mkdir -p ~/.pi/agent/extensions
+ln -s "$PWD/packages/pi-extension" ~/.pi/agent/extensions/pi-pet
+export PI_PET_RUNTIME_MODULE="$PWD/packages/runtime/interaction.js"
+```
+
+Restart Pi after installation; an already-running process will not discover the new extension. Then, from the root checkout:
 
 ```powershell
 # Windows

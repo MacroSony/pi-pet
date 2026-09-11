@@ -40,6 +40,17 @@ function makeCtx(sessionId) {
   return { sessionManager: { getSessionId: () => sessionId } };
 }
 
+test("accepts loader-owned TypeBox injection without an extension-local dependency", () => {
+  let toolDef = null;
+  extension(
+    { registerTool(def) { toolDef = def; } },
+    { Type: typeboxStub.Type }
+  );
+  assert.ok(toolDef);
+  assert.equal(toolDef.name, "pet_express");
+  assert.equal(toolDef.parameters.type, "object");
+});
+
 function startTestServer(handler) {
   return new Promise((resolve, reject) => {
     const server = http.createServer(handler);
