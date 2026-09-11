@@ -127,37 +127,43 @@ function loadRemoteConfig(env) {
   }
 }
 
+function canonicalizePiSessionId(val) {
+  if (typeof val !== "string") return null;
+  const trimmed = val.trim();
+  if (!trimmed || trimmed === "default") return null;
+  if (trimmed === "pi:" || trimmed === "pi:default") return null;
+  if (trimmed.startsWith("pi:")) {
+    const after = trimmed.slice(3).trim();
+    if (!after || after === "default") return null;
+    return `pi:${after}`;
+  }
+  return `pi:${trimmed}`;
+}
+
 function readSessionId(ctx) {
   if (!ctx || typeof ctx !== "object") return "default";
+  let candidate = null;
   try {
     const manager = ctx.sessionManager;
     if (manager && typeof manager.getSessionId === "function") {
-      const value = manager.getSessionId();
-      if (typeof value === "string" && value.trim()) return value.trim();
+      candidate = manager.getSessionId();
     }
   } catch {}
-  try {
-    if (typeof ctx.sessionId === "string" && ctx.sessionId.trim()) {
-      return ctx.sessionId.trim();
-    }
-  } catch {}
-  return "default";
+  if (!candidate) {
+    try {
+      if (typeof ctx.sessionId === "string") {
+        candidate = ctx.sessionId;
+      }
+    } catch {}
+  }
+  const canonical = canonicalizePiSessionId(candidate);
+  return canonical || "default";
 }
 
 function resolveSessionId(event, ctx, pi) {
-  function sanitize(val) {
-    if (typeof val === "string") {
-      const trimmed = val.trim();
-      if (trimmed && trimmed !== "default") {
-        return trimmed;
-      }
-    }
-    return null;
-  }
-
   function tryExtract(fn) {
     try {
-      return sanitize(fn());
+      return canonicalizePiSessionId(fn());
     } catch {
       return null;
     }
@@ -165,7 +171,7 @@ function resolveSessionId(event, ctx, pi) {
 
   // 1. Direct string event
   if (typeof event === "string") {
-    const s = sanitize(event);
+    const s = canonicalizePiSessionId(event);
     if (s) return s;
   }
 
@@ -375,6 +381,12 @@ function createInboxConsumer(pi, options = {}) {
       : (typeof env.PI_PET_PROFILE_ID === "string" && env.PI_PET_PROFILE_ID.trim() ? env.PI_PET_PROFILE_ID.trim() : "local")
   );
   const rawSessionId = options.sessionId || options.rawSessionId;
+  const canonicalSessionId = canonicalizePiSessionId(rawSessionId);
+  if (!canonicalSessionId) {
+    return null;
+  }
+
+  const normalizedSessionId = canonicalSessionId;
   const dataDir = options.dataDir || env.PI_PET_DATA_DIR || undefined;
   const claimantId =
     options.claimantId ||
@@ -386,17 +398,6 @@ function createInboxConsumer(pi, options = {}) {
   const setTimeoutFn = options.setTimeout || setTimeout;
   const clearTimeoutFn = options.clearTimeout || clearTimeout;
   const nowFn = typeof options.now === "function" ? options.now : Date.now;
-
-  if (
-    !rawSessionId ||
-    typeof rawSessionId !== "string" ||
-    !rawSessionId.trim() ||
-    rawSessionId.trim() === "default"
-  ) {
-    return null;
-  }
-
-  const normalizedSessionId = rawSessionId.trim();
 
   let active = false;
   let activeTimer = null;
@@ -811,6 +812,8 @@ module.exports.isIdentityOrSessionRejection = isIdentityOrSessionRejection;
 module.exports.postRemoteExpression = postRemoteExpression;
 module.exports.buildRemoteExpressionBody = buildRemoteExpressionBody;
 module.exports.toolCallDedupKey = toolCallDedupKey;
+module.exports.canonicalizePiSessionId = canonicalizePiSessionId;
+module.exports.readSessionId = readSessionId;
 module.exports.resolveSessionId = resolveSessionId;
 module.exports.extractMessageText = extractMessageText;
 module.exports.createInboxConsumer = createInboxConsumer;

@@ -123,7 +123,14 @@ When the Pi consumer finishes dispatching a claimed message, it calls `settleUse
 - `"expired"`: Message expired before dispatch could occur.
 - **`"delivered"` is invalid**: Settle explicitly rejects `"delivered"`. In inbox semantics, the terminal state is `"dispatched"` (turn injected into agent harness), not `"delivered"` (which is reserved for pet presentation events).
 
-### 4.3 Lifecycle State Transition
+### 4.3 User Message Receipt Query (`getUserMessageReceipt`)
+Runtime provides `getUserMessageReceipt(options)` to query user-message delivery and processing receipts:
+- **Security & Scope**: Requires safe, non-empty `petId` and `commandId` (matching `[A-Za-z0-9_-]`). Resolves pet identity strictly.
+- **Strict Matching**: Inspects only `<dataDir>/receipts/rcpt-user-<commandId>.json`. If the receipt does not exist or `receipt.petId !== petId`, the function returns `null`. Cross-pet queries and malformed requests return `null`.
+- **Opportunistic Stale Cleanup**: Querying invokes internal stale-claim cleanup for the target pet. If a message was claimed and left un-settled beyond 60s, querying materializes a terminal `failed` receipt with `delivery-unknown` in the reason, unlinks the claim file, and returns the failed receipt.
+- **Non-Downgrading**: If a terminal receipt (`dispatched`, `failed`, `expired`, `rejected`) already exists, it is never downgraded or overwritten.
+
+### 4.4 Lifecycle State Transition
 ```text
 (Client Enqueue)
       │
@@ -251,8 +258,10 @@ All runtime artifacts reside in `<dataDir>` (`~/.pi-pet` by default, or `PI_PET_
 - **No Replay**: A claimed message is **never** moved back to `pending`. If the dispatch fails or times out, the message is settled as `failed` (terminal). This prevents duplicate execution of agent instructions.
 
 ### 6.6 Stale Claim Expiration (`CLAIM_TIMEOUT_MS = 60000`)
-- If a consumer claims a message but crashes or hangs for more than 60 seconds, the next call to `claimNextUserMessage` or `settleUserMessage` cleans up the stale claim.
-- If no terminal receipt exists, it writes a terminal receipt with `status: "failed"` (`reason: "Claim expired: stale claimed item older than 60s (delivery-unknown)"`) and deletes the claim file.
+- If a consumer claims a message but crashes or hangs for more than 60 seconds, the next call to `claimNextUserMessage`, `getUserMessageReceipt`, or `settleUserMessage` cleans up the stale claim via a shared internal helper.
+- If no terminal receipt exists, it writes a terminal receipt with `status: "failed"` (`reason: "Claim expired: stale claimed item older than 60s (delivery-unknown)"`), deletes the claim file upon successful receipt persistence, and never requeues or replays the message.
+- **Terminal Receipt Non-Downgrade**: If an existing terminal receipt (`dispatched`, `failed`, `expired`, `rejected`) already exists on disk, stale cleanup preserves the terminal receipt and unlinks the leftover claim file without overwriting.
+- **I/O Evidence Preservation**: If writing the terminal receipt fails due to a filesystem I/O error, the claim file is preserved as evidence.
 
 ---
 
@@ -310,6 +319,6 @@ pi.sendUserMessage(text, {
 - `POST /pet-inbox` is rejected on remote SSH ingress endpoints.
 - Remote agent-to-agent (A2A) inbox messaging and remote client injection are deferred to future milestones.
 
-### 8.3 UI Receipt Polling Deferred
-- The current desktop UI sends the message via `send_session_message`, receives the initial HTTP response (`queued` / `dispatched`), and displays a transient notification bubble ("Message queued").
-- The UI does not poll receipt status or display subsequent transition to `dispatched` / `failed` in the pet window.
+### 8.3 UI Receipt Polling
+- The runtime provides the `getUserMessageReceipt` API to support UI polling of message receipts (`rcpt-user-<commandId>.json`) from `queued` to terminal `dispatched` or `failed`.
+- Querying triggers stale claim cleanup, ensuring that UI queries against disconnected or crashed consumers promptly observe terminal `failed` (`delivery-unknown`) status without requiring a subsequent claim cycle.

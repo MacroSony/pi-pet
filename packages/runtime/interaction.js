@@ -24,6 +24,7 @@ const {
   MIN_USER_MESSAGE_TTL_MS,
   claimNextUserMessage,
   enqueueUserMessage,
+  getUserMessageReceipt,
   settleUserMessage,
 } = require("./inbox");
 
@@ -366,6 +367,7 @@ module.exports = {
   derivePetId,
   enqueueUserMessage,
   expressExpression,
+  getUserMessageReceipt,
   isSafePetId,
   settleUserMessage,
   validateExpression,

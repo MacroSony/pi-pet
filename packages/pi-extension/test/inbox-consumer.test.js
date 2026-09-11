@@ -130,22 +130,22 @@ test("start, shutdown, and reload single-loop behavior: replaces previous loop a
   mockPi.emit("session_start", { sessionId: "ses-1" });
   const consumer1 = lifecycle.getActiveConsumer();
   assert.ok(consumer1, "consumer1 started");
-  assert.equal(consumer1.sessionId, "ses-1");
+  assert.equal(consumer1.sessionId, "pi:ses-1");
   assert.equal(consumer1.isRunning, true);
 
   await new Promise((r) => setTimeout(r, 25));
-  assert.ok(claimedBySession.includes("ses-1"), "claimed for ses-1");
+  assert.ok(claimedBySession.includes("pi:ses-1"), "claimed for canonical pi:ses-1");
 
   // 2. session_start with ses-2 replaces previous loop
   mockPi.emit("session_start", { sessionId: "ses-2" });
   const consumer2 = lifecycle.getActiveConsumer();
   assert.ok(consumer2, "consumer2 started");
-  assert.equal(consumer2.sessionId, "ses-2");
+  assert.equal(consumer2.sessionId, "pi:ses-2");
   assert.equal(consumer1.isRunning, false, "consumer1 must be stopped");
   assert.equal(consumer2.isRunning, true, "consumer2 is running");
 
   await new Promise((r) => setTimeout(r, 25));
-  assert.ok(claimedBySession.includes("ses-2"), "claimed for ses-2");
+  assert.ok(claimedBySession.includes("pi:ses-2"), "claimed for canonical pi:ses-2");
 
   // 3. session_shutdown stops the loop
   mockPi.emit("session_shutdown");
@@ -191,7 +191,7 @@ test("two separately attached mock Pi instances do not stop or overwrite each ot
   mockPi1.emit("session_start", { sessionId: "ses-pi-1" });
   const consumer1 = lifecycle1.getActiveConsumer();
   assert.ok(consumer1, "consumer1 started");
-  assert.equal(consumer1.sessionId, "ses-pi-1");
+  assert.equal(consumer1.sessionId, "pi:ses-pi-1");
   assert.equal(consumer1.isRunning, true);
   assert.equal(lifecycle2.getActiveConsumer(), null, "lifecycle2 has no active consumer yet");
 
@@ -199,7 +199,7 @@ test("two separately attached mock Pi instances do not stop or overwrite each ot
   mockPi2.emit("session_start", { sessionId: "ses-pi-2" });
   const consumer2 = lifecycle2.getActiveConsumer();
   assert.ok(consumer2, "consumer2 started");
-  assert.equal(consumer2.sessionId, "ses-pi-2");
+  assert.equal(consumer2.sessionId, "pi:ses-pi-2");
   assert.equal(consumer2.isRunning, true);
   assert.equal(consumer1.isRunning, true, "consumer1 on pi1 must still be running after pi2 session_start");
 
@@ -214,7 +214,7 @@ test("two separately attached mock Pi instances do not stop or overwrite each ot
   mockPi1.emit("session_start", { sessionId: "ses-pi-1-restarted" });
   const consumer1Restarted = lifecycle1.getActiveConsumer();
   assert.ok(consumer1Restarted, "consumer1 restarted");
-  assert.equal(consumer1Restarted.sessionId, "ses-pi-1-restarted");
+  assert.equal(consumer1Restarted.sessionId, "pi:ses-pi-1-restarted");
   assert.equal(consumer1Restarted.isRunning, true);
   assert.equal(consumer2.isRunning, true, "consumer2 on pi2 must not be affected by pi1 restart");
 
@@ -258,7 +258,7 @@ test("resolveSessionId handles throwing getters and function candidates safely w
   const validCtx = { sessionId: "ses-recovered-from-ctx" };
   assert.equal(
     extension.resolveSessionId(throwingEventWithValidCtx, validCtx),
-    "ses-recovered-from-ctx"
+    "pi:ses-recovered-from-ctx"
   );
 
   // 4. Throwing sessionManager on ctx falls back to pi
@@ -270,7 +270,7 @@ test("resolveSessionId handles throwing getters and function candidates safely w
     },
   };
   const validPi = { sessionId: "ses-recovered-from-pi" };
-  assert.equal(extension.resolveSessionId(null, throwingCtx, validPi), "ses-recovered-from-pi");
+  assert.equal(extension.resolveSessionId(null, throwingCtx, validPi), "pi:ses-recovered-from-pi");
 
   // 5. Throwing pi.getSessionId returns null safely
   const throwingPi = {
@@ -345,7 +345,7 @@ test("timer async callback does not produce unhandled promise rejection", async 
 
 test("own-session isolation via mocked runtime: profileId defaults to local and routes to matching session only", async () => {
   const inboxes = {
-    "session-alpha": [
+    "pi:session-alpha": [
       {
         commandId: "cmd-1",
         claimToken: "tok-1",
@@ -354,7 +354,7 @@ test("own-session isolation via mocked runtime: profileId defaults to local and 
         expiresAtMs: Date.now() + 10000,
       },
     ],
-    "session-beta": [
+    "pi:session-beta": [
       {
         commandId: "cmd-2",
         claimToken: "tok-2",
@@ -401,12 +401,12 @@ test("own-session isolation via mocked runtime: profileId defaults to local and 
     assert.equal(mockPi.sentUserMessages[0].text, "Message for alpha");
 
     // Session alpha inbox is drained, session beta remains untouched
-    assert.equal(inboxes["session-alpha"].length, 0);
-    assert.equal(inboxes["session-beta"].length, 1, "session-beta message must not be touched");
+    assert.equal(inboxes["pi:session-alpha"].length, 0);
+    assert.equal(inboxes["pi:session-beta"].length, 1, "session-beta message must not be touched");
 
     assert.equal(claimsReceived[0].agentId, "pi");
     assert.equal(claimsReceived[0].profileId, "local");
-    assert.equal(claimsReceived[0].rawSessionId, "session-alpha");
+    assert.equal(claimsReceived[0].rawSessionId, "pi:session-alpha");
     assert.ok(typeof claimsReceived[0].claimantId === "string");
     assert.equal(typeof claimsReceived[0].now, "function", "claimNextUserMessage receives now as a function");
 
@@ -689,13 +689,14 @@ test("real runtime integration: enqueues user message, claims, dispatches, and p
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pet-inbox-real-"));
   const rawSessionId = "ses-real-integration-1";
-  const petId = realInteraction.derivePetId({ profileId: "local", agentId: "pi", rawSessionId });
+  const canonicalSessionId = "pi:ses-real-integration-1";
+  const petId = realInteraction.derivePetId({ profileId: "local", agentId: "pi", rawSessionId: canonicalSessionId });
 
   // Create active session status
   fs.mkdirSync(path.join(dataDir, "status"), { recursive: true });
   fs.writeFileSync(
     path.join(dataDir, "status", `status-${petId}.json`),
-    JSON.stringify({ state: "idle" })
+    JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: canonicalSessionId })
   );
 
   const fixedClock = 1700000000000;
@@ -705,7 +706,7 @@ test("real runtime integration: enqueues user message, claims, dispatches, and p
   const enqReceipt = realInteraction.enqueueUserMessage({
     profileId: "local",
     agentId: "pi",
-    rawSessionId,
+    rawSessionId: canonicalSessionId,
     text: "Hello Pi from user via pet!",
     dataDir,
     now: nowFn,
@@ -759,13 +760,14 @@ test("real runtime integration with fixed clock: enqueues user message with TTL 
 
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pet-inbox-clock-"));
   const rawSessionId = "ses-real-clock-1";
-  const petId = realInteraction.derivePetId({ profileId: "local", agentId: "pi", rawSessionId });
+  const canonicalSessionId = "pi:ses-real-clock-1";
+  const petId = realInteraction.derivePetId({ profileId: "local", agentId: "pi", rawSessionId: canonicalSessionId });
 
   // Create active session status
   fs.mkdirSync(path.join(dataDir, "status"), { recursive: true });
   fs.writeFileSync(
     path.join(dataDir, "status", `status-${petId}.json`),
-    JSON.stringify({ state: "idle" })
+    JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: canonicalSessionId })
   );
 
   let currentClockMs = 1700000000000;
@@ -775,7 +777,7 @@ test("real runtime integration with fixed clock: enqueues user message with TTL 
   const enqReceipt1 = realInteraction.enqueueUserMessage({
     profileId: "local",
     agentId: "pi",
-    rawSessionId,
+    rawSessionId: canonicalSessionId,
     text: "Hello with fixed TTL clock!",
     ttlMs: 5000,
     dataDir,
@@ -811,7 +813,7 @@ test("real runtime integration with fixed clock: enqueues user message with TTL 
   const enqReceipt2 = realInteraction.enqueueUserMessage({
     profileId: "local",
     agentId: "pi",
-    rawSessionId,
+    rawSessionId: canonicalSessionId,
     text: "Message that will expire under fixed clock",
     ttlMs: 2000,
     dataDir,
@@ -837,29 +839,65 @@ test("real runtime integration with fixed clock: enqueues user message with TTL 
   consumer.stop();
 });
 
+test("canonicalizePiSessionId canonicalizes raw Pi session ID and avoids double prefix", () => {
+  // Plain IDs get pi: prefix
+  assert.equal(extension.canonicalizePiSessionId("ses-1"), "pi:ses-1");
+  assert.equal(extension.canonicalizePiSessionId("  ses-2  "), "pi:ses-2");
+  assert.equal(extension.canonicalizePiSessionId("pi-session"), "pi:pi-session");
+
+  // Already prefixed with pi: preserved without double prefix
+  assert.equal(extension.canonicalizePiSessionId("pi:ses-1"), "pi:ses-1");
+  assert.equal(extension.canonicalizePiSessionId("  pi:ses-2  "), "pi:ses-2");
+  assert.equal(extension.canonicalizePiSessionId("pi:pi-session"), "pi:pi-session");
+  assert.equal(extension.canonicalizePiSessionId("pi:pi:session"), "pi:pi:session");
+
+  // Rejection of default, whitespace, empty, and invalid types
+  assert.equal(extension.canonicalizePiSessionId("default"), null);
+  assert.equal(extension.canonicalizePiSessionId("  default  "), null);
+  assert.equal(extension.canonicalizePiSessionId("pi:default"), null);
+  assert.equal(extension.canonicalizePiSessionId("  pi:default  "), null);
+  assert.equal(extension.canonicalizePiSessionId("pi:"), null);
+  assert.equal(extension.canonicalizePiSessionId("  pi:  "), null);
+  assert.equal(extension.canonicalizePiSessionId(""), null);
+  assert.equal(extension.canonicalizePiSessionId("   "), null);
+  assert.equal(extension.canonicalizePiSessionId(null), null);
+  assert.equal(extension.canonicalizePiSessionId(undefined), null);
+  assert.equal(extension.canonicalizePiSessionId(12345), null);
+  assert.equal(extension.canonicalizePiSessionId({}), null);
+});
+
 test("resolveSessionId helper handles multiple formats and rejects default/empty", () => {
   // Direct strings
-  assert.equal(extension.resolveSessionId("ses-1"), "ses-1");
-  assert.equal(extension.resolveSessionId("  ses-2  "), "ses-2");
+  assert.equal(extension.resolveSessionId("ses-1"), "pi:ses-1");
+  assert.equal(extension.resolveSessionId("  ses-2  "), "pi:ses-2");
+  assert.equal(extension.resolveSessionId("pi:ses-1"), "pi:ses-1");
+  assert.equal(extension.resolveSessionId("pi:pi-sess"), "pi:pi-sess");
+  assert.equal(extension.resolveSessionId("pi-sess"), "pi:pi-sess");
   assert.equal(extension.resolveSessionId("default"), null);
+  assert.equal(extension.resolveSessionId("pi:default"), null);
+  assert.equal(extension.resolveSessionId("pi:"), null);
   assert.equal(extension.resolveSessionId("   "), null);
   assert.equal(extension.resolveSessionId(""), null);
 
   // Event object
-  assert.equal(extension.resolveSessionId({ sessionId: "ses-3" }), "ses-3");
-  assert.equal(extension.resolveSessionId({ rawSessionId: "ses-4" }), "ses-4");
-  assert.equal(extension.resolveSessionId({ sessionManager: { getSessionId: () => "ses-5" } }), "ses-5");
-  assert.equal(extension.resolveSessionId({ session: { id: "ses-6" } }), "ses-6");
+  assert.equal(extension.resolveSessionId({ sessionId: "ses-3" }), "pi:ses-3");
+  assert.equal(extension.resolveSessionId({ rawSessionId: "ses-4" }), "pi:ses-4");
+  assert.equal(extension.resolveSessionId({ rawSessionId: "pi:ses-4" }), "pi:ses-4");
+  assert.equal(extension.resolveSessionId({ sessionManager: { getSessionId: () => "ses-5" } }), "pi:ses-5");
+  assert.equal(extension.resolveSessionId({ session: { id: "ses-6" } }), "pi:ses-6");
   assert.equal(extension.resolveSessionId({ sessionId: "default" }), null);
+  assert.equal(extension.resolveSessionId({ sessionId: "pi:default" }), null);
 
   // Context object
-  assert.equal(extension.resolveSessionId(null, { sessionId: "ses-7" }), "ses-7");
-  assert.equal(extension.resolveSessionId(null, { sessionManager: { getSessionId: () => "ses-8" } }), "ses-8");
+  assert.equal(extension.resolveSessionId(null, { sessionId: "ses-7" }), "pi:ses-7");
+  assert.equal(extension.resolveSessionId(null, { sessionId: "pi:ses-7" }), "pi:ses-7");
+  assert.equal(extension.resolveSessionId(null, { sessionManager: { getSessionId: () => "ses-8" } }), "pi:ses-8");
 
   // Pi object
-  assert.equal(extension.resolveSessionId(null, null, { sessionId: "ses-9" }), "ses-9");
-  assert.equal(extension.resolveSessionId(null, null, { getSessionId: () => "ses-10" }), "ses-10");
-  assert.equal(extension.resolveSessionId(null, null, { sessionManager: { getSessionId: () => "ses-11" } }), "ses-11");
+  assert.equal(extension.resolveSessionId(null, null, { sessionId: "ses-9" }), "pi:ses-9");
+  assert.equal(extension.resolveSessionId(null, null, { sessionId: "pi:ses-9" }), "pi:ses-9");
+  assert.equal(extension.resolveSessionId(null, null, { getSessionId: () => "ses-10" }), "pi:ses-10");
+  assert.equal(extension.resolveSessionId(null, null, { sessionManager: { getSessionId: () => "ses-11" } }), "pi:ses-11");
 });
 
 test("extractMessageText helper accepts only canonical .text property without guessing aliases", () => {

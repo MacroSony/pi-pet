@@ -51,6 +51,88 @@ const SETTLE_WIRE_FIELDS = Object.freeze([
   "reason",
 ]);
 
+function cleanupStaleClaims({ fsApi, claimedDir, receiptsDir, petId, nowMs }) {
+  try {
+    if (!fsApi.existsSync(claimedDir)) return;
+    const claimedEntries = fsApi.readdirSync(claimedDir);
+    for (const file of claimedEntries) {
+      if (!file.endsWith(".json") || file.endsWith(".tmp")) continue;
+      const fileBase = path.basename(file, ".json");
+      if (!isSafeId(fileBase)) continue;
+
+      const claimedFilePath = path.join(claimedDir, file);
+      try {
+        const rawClaimed = fsApi.readFileSync(claimedFilePath, "utf8");
+        const claimedMsg = JSON.parse(rawClaimed);
+        if (!claimedMsg || typeof claimedMsg !== "object" || Array.isArray(claimedMsg)) continue;
+
+        const candidateCommandId = typeof claimedMsg.commandId === "string" && isSafeId(claimedMsg.commandId)
+          ? claimedMsg.commandId
+          : fileBase;
+        if (!isSafeId(candidateCommandId)) continue;
+
+        const candidatePetId = typeof claimedMsg.petId === "string" && isSafePetId(claimedMsg.petId)
+          ? claimedMsg.petId
+          : petId;
+        if (!isSafePetId(candidatePetId)) continue;
+
+        const claimedAt = typeof claimedMsg.claimedAtMs === "number"
+          ? claimedMsg.claimedAtMs
+          : (typeof claimedMsg.updatedAtMs === "number"
+            ? claimedMsg.updatedAtMs
+            : (typeof claimedMsg.createdAtMs === "number" ? claimedMsg.createdAtMs : 0));
+
+        if (nowMs - claimedAt > CLAIM_TIMEOUT_MS) {
+          const rcptPath = path.join(receiptsDir, `rcpt-user-${candidateCommandId}.json`);
+
+          // Check if a terminal user receipt already exists
+          let existingTerminal = false;
+          try {
+            if (fsApi.existsSync(rcptPath)) {
+              const existingRcpt = JSON.parse(fsApi.readFileSync(rcptPath, "utf8"));
+              if (
+                existingRcpt.status === "dispatched" ||
+                existingRcpt.status === "failed" ||
+                existingRcpt.status === "expired" ||
+                existingRcpt.status === "rejected"
+              ) {
+                existingTerminal = true;
+              }
+            }
+          } catch {}
+
+          if (existingTerminal) {
+            // Remove leftover claim without downgrading/overwriting terminal status
+            try { fsApi.unlinkSync(claimedFilePath); } catch {}
+          } else {
+            // Persist terminal receipt before unlinking claim; if receipt write fails, leave claim
+            const failedReceipt = buildUserMessageReceipt({
+              commandId: candidateCommandId,
+              dedupKey: typeof claimedMsg.dedupKey === "string" && isSafeId(claimedMsg.dedupKey) ? claimedMsg.dedupKey : null,
+              petId: candidatePetId,
+              status: "failed",
+              reason: "Claim expired: stale claimed item older than 60s (delivery-unknown)",
+              text: typeof claimedMsg.text === "string" ? claimedMsg.text : "",
+              deliverAs: "followUp",
+              createdAtMs: typeof claimedMsg.createdAtMs === "number" ? claimedMsg.createdAtMs : nowMs,
+              updatedAtMs: nowMs,
+              expiresAtMs: typeof claimedMsg.expiresAtMs === "number" ? claimedMsg.expiresAtMs : undefined,
+            });
+            try {
+              atomicWriteJson(rcptPath, failedReceipt, fsApi);
+              try { fsApi.unlinkSync(claimedFilePath); } catch {}
+            } catch {
+              // Leave claim if receipt write fails
+            }
+          }
+        }
+      } catch {
+        // Skip unreadable files
+      }
+    }
+  } catch {}
+}
+
 function extractWireEnvelope(options, allowedFields) {
   const envelope = {};
   for (const key of allowedFields) {
@@ -520,84 +602,7 @@ function claimNextUserMessage(options = {}) {
   fsApi.mkdirSync(receiptsDir, { recursive: true });
 
   // 1. Clean up stale claimed items older than 60s (terminal failed/delivery-unknown, NEVER requeued)
-  try {
-    const claimedEntries = fsApi.readdirSync(claimedDir);
-    for (const file of claimedEntries) {
-      if (!file.endsWith(".json") || file.endsWith(".tmp")) continue;
-      const fileBase = path.basename(file, ".json");
-      if (!isSafeId(fileBase)) continue;
-
-      const claimedFilePath = path.join(claimedDir, file);
-      try {
-        const rawClaimed = fsApi.readFileSync(claimedFilePath, "utf8");
-        const claimedMsg = JSON.parse(rawClaimed);
-        if (!claimedMsg || typeof claimedMsg !== "object" || Array.isArray(claimedMsg)) continue;
-
-        const candidateCommandId = typeof claimedMsg.commandId === "string" && isSafeId(claimedMsg.commandId)
-          ? claimedMsg.commandId
-          : fileBase;
-        if (!isSafeId(candidateCommandId)) continue;
-
-        const candidatePetId = typeof claimedMsg.petId === "string" && isSafePetId(claimedMsg.petId)
-          ? claimedMsg.petId
-          : petId;
-        if (!isSafePetId(candidatePetId)) continue;
-
-        const claimedAt = typeof claimedMsg.claimedAtMs === "number"
-          ? claimedMsg.claimedAtMs
-          : (typeof claimedMsg.updatedAtMs === "number"
-            ? claimedMsg.updatedAtMs
-            : (typeof claimedMsg.createdAtMs === "number" ? claimedMsg.createdAtMs : 0));
-
-        if (nowMs - claimedAt > CLAIM_TIMEOUT_MS) {
-          const rcptPath = path.join(receiptsDir, `rcpt-user-${candidateCommandId}.json`);
-
-          // Check if a terminal user receipt already exists
-          let existingTerminal = false;
-          try {
-            if (fsApi.existsSync(rcptPath)) {
-              const existingRcpt = JSON.parse(fsApi.readFileSync(rcptPath, "utf8"));
-              if (
-                existingRcpt.status === "dispatched" ||
-                existingRcpt.status === "failed" ||
-                existingRcpt.status === "expired" ||
-                existingRcpt.status === "rejected"
-              ) {
-                existingTerminal = true;
-              }
-            }
-          } catch {}
-
-          if (existingTerminal) {
-            // Remove leftover claim without downgrading/overwriting terminal status
-            try { fsApi.unlinkSync(claimedFilePath); } catch {}
-          } else {
-            // Persist terminal receipt before unlinking claim; if receipt write fails, leave claim
-            const failedReceipt = buildUserMessageReceipt({
-              commandId: candidateCommandId,
-              dedupKey: typeof claimedMsg.dedupKey === "string" && isSafeId(claimedMsg.dedupKey) ? claimedMsg.dedupKey : null,
-              petId: candidatePetId,
-              status: "failed",
-              reason: "Claim expired: stale claimed item older than 60s (delivery-unknown)",
-              text: typeof claimedMsg.text === "string" ? claimedMsg.text : "",
-              deliverAs: "followUp",
-              createdAtMs: typeof claimedMsg.createdAtMs === "number" ? claimedMsg.createdAtMs : nowMs,
-              updatedAtMs: nowMs,
-              expiresAtMs: typeof claimedMsg.expiresAtMs === "number" ? claimedMsg.expiresAtMs : undefined,
-            });
-            try {
-              atomicWriteJson(rcptPath, failedReceipt, fsApi);
-              try { fsApi.unlinkSync(claimedFilePath); } catch {}
-            } catch {
-              // Leave claim if receipt write fails
-            }
-          }
-        }
-      } catch {
-        // Skip unreadable files
-      }
-    }
-  } catch {}
+  cleanupStaleClaims({ fsApi, claimedDir, receiptsDir, petId, nowMs });
 
   // 2. Scan pending items in FIFO order
   let pendingEntries = [];
@@ -1012,6 +1017,117 @@ function settleUserMessage(options = {}) {
   return receipt;
 }
 
+function getUserMessageReceipt(options = {}) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    return null;
+  }
+
+  const commandId = options.commandId;
+  if (!commandId || typeof commandId !== "string" || !isSafeId(commandId)) {
+    return null;
+  }
+
+  const idResult = resolvePetIdentity(options);
+  if (!idResult.ok || !idResult.petId || !isSafePetId(idResult.petId)) {
+    return null;
+  }
+  const petId = idResult.petId;
+
+  const fsApi = options.fsApi || fs;
+  const env = options.env || process.env;
+  const nowMs = typeof options.now === "function" ? options.now() : Date.now();
+
+  const dataDir = resolveDataDir(options, env);
+  const inboxPetDir = path.join(dataDir, "inbox", petId);
+  const pendingDir = path.join(inboxPetDir, "pending");
+  const claimedDir = path.join(inboxPetDir, "claimed");
+  const receiptsDir = path.join(dataDir, "receipts");
+
+  // Clean up stale claimed items older than 60s before reading receipt
+  cleanupStaleClaims({ fsApi, claimedDir, receiptsDir, petId, nowMs });
+
+  const rcptPath = path.join(receiptsDir, `rcpt-user-${commandId}.json`);
+  let rcpt;
+  try {
+    if (!fsApi.existsSync(rcptPath)) {
+      return null;
+    }
+    const rawRcpt = fsApi.readFileSync(rcptPath, "utf8");
+    rcpt = JSON.parse(rawRcpt);
+    if (!rcpt || typeof rcpt !== "object" || Array.isArray(rcpt)) {
+      return null;
+    }
+    if (rcpt.petId !== petId) {
+      return null;
+    }
+    if (rcpt.commandId !== commandId) {
+      return null;
+    }
+  } catch {
+    return null;
+  }
+
+  // If receipt is queued and expired, check if message is still pending and expire it atomically
+  if (rcpt.status === "queued" && typeof rcpt.expiresAtMs === "number" && rcpt.expiresAtMs <= nowMs) {
+    let pendingEntry = null;
+    try {
+      if (fsApi.existsSync(pendingDir)) {
+        const entries = fsApi.readdirSync(pendingDir);
+        for (const entry of entries) {
+          if (!entry.endsWith(".json") || entry.endsWith(".tmp")) continue;
+          if (entry.endsWith(`-${commandId}.json`)) {
+            pendingEntry = entry;
+            break;
+          }
+        }
+      }
+    } catch {
+      pendingEntry = null;
+    }
+
+    if (pendingEntry) {
+      const pendingFilePath = path.join(pendingDir, pendingEntry);
+      const claimedFilePath = path.join(claimedDir, `${commandId}.json`);
+
+      let renameOk = false;
+      try {
+        fsApi.mkdirSync(claimedDir, { recursive: true });
+        fsApi.renameSync(pendingFilePath, claimedFilePath);
+        renameOk = true;
+      } catch {
+        // Consumer claimed it first, or concurrent race
+        renameOk = false;
+      }
+
+      if (renameOk) {
+        const expiredReceipt = buildUserMessageReceipt({
+          commandId: rcpt.commandId,
+          dedupKey: rcpt.dedupKey,
+          petId: rcpt.petId,
+          status: "expired",
+          reason: "Message expired in queue before delivery",
+          text: rcpt.text,
+          deliverAs: rcpt.deliverAs || "followUp",
+          createdAtMs: rcpt.createdAtMs,
+          updatedAtMs: nowMs,
+          expiresAtMs: rcpt.expiresAtMs,
+        });
+
+        try {
+          atomicWriteJson(rcptPath, expiredReceipt, fsApi);
+          try { fsApi.unlinkSync(claimedFilePath); } catch {}
+          return expiredReceipt;
+        } catch {
+          // If receipt write fails, retain claimedFilePath as evidence
+          return rcpt;
+        }
+      }
+    }
+  }
+
+  return rcpt;
+}
+
 module.exports = {
   CLAIM_TIMEOUT_MS,
   DEFAULT_USER_MESSAGE_TTL_MS,
@@ -1021,5 +1137,6 @@ module.exports = {
   buildUserMessageReceipt,
   claimNextUserMessage,
   enqueueUserMessage,
+  getUserMessageReceipt,
   settleUserMessage,
 };

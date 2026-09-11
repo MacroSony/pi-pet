@@ -17,6 +17,7 @@ const {
   derivePetId,
   enqueueUserMessage,
   expressExpression,
+  getUserMessageReceipt,
   settleUserMessage,
 } = require("..");
 
@@ -1401,6 +1402,502 @@ describe("User Message Inbox: Settle with injected env", () => {
       env: hugeEnv,
     });
     assert.strictEqual(settled.status, "dispatched");
+  });
+});
+
+describe("User Message Inbox: getUserMessageReceipt", () => {
+  it("safely queries user-message receipts for matching pet and commandId across statuses", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-receipt-query" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = Date.now();
+    const enq = enqueueUserMessage({
+      petId,
+      text: "Query receipt test",
+      commandId: "cmd-rcpt-query-1",
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+    assert.strictEqual(enq.status, "queued");
+
+    // Query queued receipt with explicit petId
+    const queuedRcpt = getUserMessageReceipt({
+      petId,
+      commandId: "cmd-rcpt-query-1",
+      dataDir,
+    });
+    assert.ok(queuedRcpt);
+    assert.strictEqual(queuedRcpt.commandId, "cmd-rcpt-query-1");
+    assert.strictEqual(queuedRcpt.petId, petId);
+    assert.strictEqual(queuedRcpt.status, "queued");
+    assert.strictEqual(queuedRcpt.text, "Query receipt test");
+
+    // Query queued receipt with derived identity input
+    const derivedRcpt = getUserMessageReceipt({
+      profileId: "local",
+      agentId: "pi",
+      rawSessionId: "s-receipt-query",
+      commandId: "cmd-rcpt-query-1",
+      dataDir,
+    });
+    assert.ok(derivedRcpt);
+    assert.strictEqual(derivedRcpt.status, "queued");
+
+    // Claim and settle to dispatched
+    const claim = claimNextUserMessage({ petId, dataDir, now: () => t0 + 100 });
+    assert.ok(claim);
+    settleUserMessage({
+      petId,
+      commandId: "cmd-rcpt-query-1",
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      now: () => t0 + 200,
+      dataDir,
+    });
+
+    // Query settled receipt
+    const dispatchedRcpt = getUserMessageReceipt({
+      petId,
+      commandId: "cmd-rcpt-query-1",
+      dataDir,
+    });
+    assert.ok(dispatchedRcpt);
+    assert.strictEqual(dispatchedRcpt.status, "dispatched");
+  });
+
+  it("strictly rejects cross-pet receipt access and returns null", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petIdA = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-pet-a" });
+    const petIdB = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-pet-b" });
+    createActiveSession(statusDir, petIdA);
+    createActiveSession(statusDir, petIdB);
+
+    enqueueUserMessage({
+      petId: petIdA,
+      text: "Pet A message",
+      commandId: "cmd-pet-a-secret",
+      dataDir,
+    });
+
+    // Pet B tries to query Pet A's command receipt
+    const crossQuery = getUserMessageReceipt({
+      petId: petIdB,
+      commandId: "cmd-pet-a-secret",
+      dataDir,
+    });
+    assert.strictEqual(crossQuery, null);
+  });
+
+  it("returns null for missing, malformed, or unsafe arguments", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-missing-null" });
+    createActiveSession(statusDir, petId);
+
+    assert.strictEqual(getUserMessageReceipt(null), null);
+    assert.strictEqual(getUserMessageReceipt(undefined), null);
+    assert.strictEqual(getUserMessageReceipt([]), null);
+    assert.strictEqual(getUserMessageReceipt("invalid"), null);
+    assert.strictEqual(getUserMessageReceipt({ dataDir }), null);
+    assert.strictEqual(getUserMessageReceipt({ petId, dataDir }), null); // missing commandId
+    assert.strictEqual(getUserMessageReceipt({ petId, commandId: "", dataDir }), null);
+    assert.strictEqual(getUserMessageReceipt({ petId, commandId: "../traversal", dataDir }), null);
+    assert.strictEqual(getUserMessageReceipt({ petId: "invalid/pet", commandId: "cmd-1", dataDir }), null);
+    assert.strictEqual(getUserMessageReceipt({ petId, commandId: "non-existent-cmd", dataDir }), null);
+  });
+
+  it("triggers stale claim cleanup during query, marks terminal failed (delivery-unknown), and never replays", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-stale" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = Date.now();
+    const cmdId = "cmd-query-stale-1";
+
+    enqueueUserMessage({
+      petId,
+      text: "Stale query message",
+      commandId: cmdId,
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+
+    // Claim at t0
+    const claim = claimNextUserMessage({ petId, dataDir, now: () => t0 });
+    assert.ok(claim);
+    assert.strictEqual(claim.commandId, cmdId);
+
+    // Advance time past 60s
+    const tStale = t0 + CLAIM_TIMEOUT_MS + 5000;
+
+    // UI queries receipt during disconnected/stale window
+    const staleRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tStale,
+      dataDir,
+    });
+
+    assert.ok(staleRcpt);
+    assert.strictEqual(staleRcpt.commandId, cmdId);
+    assert.strictEqual(staleRcpt.status, "failed");
+    assert.match(staleRcpt.reason, /delivery-unknown/);
+
+    // Claimed file must be removed
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+    const claimedFiles = fs.readdirSync(claimedDir).filter((f) => f.endsWith(".json"));
+    assert.strictEqual(claimedFiles.length, 0);
+
+    // Pending file must not exist (never requeued/replayed)
+    const pendingDir = path.join(dataDir, "inbox", petId, "pending");
+    const pendingFiles = fs.existsSync(pendingDir)
+      ? fs.readdirSync(pendingDir).filter((f) => f.endsWith(".json"))
+      : [];
+    assert.strictEqual(pendingFiles.length, 0);
+
+    // Subsequent claimNext returns null
+    const nextClaim = claimNextUserMessage({ petId, dataDir, now: () => tStale });
+    assert.strictEqual(nextClaim, null);
+  });
+
+  it("preserves existing terminal receipt and does not downgrade during stale query", () => {
+    const { dataDir, statusDir, receiptsDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-nodowngrade" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = Date.now();
+    const cmdId = "cmd-terminal-preserve";
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+    fs.mkdirSync(claimedDir, { recursive: true });
+
+    // Leftover claim file older than 60s
+    const claimedFilePath = path.join(claimedDir, `${cmdId}.json`);
+    fs.writeFileSync(
+      claimedFilePath,
+      JSON.stringify({
+        schemaVersion: "1",
+        kind: "user_message",
+        commandId: cmdId,
+        dedupKey: "dedup-terminal-preserve",
+        petId,
+        text: "Leftover claim for preserve test",
+        deliverAs: "followUp",
+        claimToken: "token-preserve",
+        claimedAtMs: t0,
+        createdAtMs: t0,
+        expiresAtMs: t0 + 120000,
+      })
+    );
+
+    // Terminal user receipt already exists on disk with status 'dispatched'
+    const rcptPath = path.join(receiptsDir, `rcpt-user-${cmdId}.json`);
+    fs.writeFileSync(
+      rcptPath,
+      JSON.stringify({
+        schemaVersion: "1",
+        kind: "user_message",
+        commandId: cmdId,
+        dedupKey: "dedup-terminal-preserve",
+        petId,
+        status: "dispatched",
+        reason: null,
+        text: "Leftover claim for preserve test",
+        deliverAs: "followUp",
+        createdAtMs: t0,
+        updatedAtMs: t0 + 1000,
+      })
+    );
+
+    // Advance time > 60s and query receipt
+    const tStale = t0 + CLAIM_TIMEOUT_MS + 5000;
+    const queriedRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tStale,
+      dataDir,
+    });
+
+    assert.ok(queriedRcpt);
+    assert.strictEqual(queriedRcpt.status, "dispatched", "Must preserve terminal dispatched status");
+
+    // Leftover claim file must be removed
+    assert.ok(!fs.existsSync(claimedFilePath), "Leftover claim file should be cleaned up");
+
+    // Receipt on disk must remain dispatched
+    const preservedRcpt = JSON.parse(fs.readFileSync(rcptPath, "utf8"));
+    assert.strictEqual(preservedRcpt.status, "dispatched");
+  });
+
+  it("preserves claim evidence when receipt write fails during stale cleanup", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-io-fail" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = Date.now();
+    const cmdId = "cmd-query-io-fail";
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+    fs.mkdirSync(claimedDir, { recursive: true });
+
+    const claimedFilePath = path.join(claimedDir, `${cmdId}.json`);
+    fs.writeFileSync(
+      claimedFilePath,
+      JSON.stringify({
+        schemaVersion: "1",
+        kind: "user_message",
+        commandId: cmdId,
+        dedupKey: "dedup-io-fail",
+        petId,
+        text: "IO fail claim",
+        deliverAs: "followUp",
+        claimToken: "token-io-fail",
+        claimedAtMs: t0,
+        createdAtMs: t0,
+        expiresAtMs: t0 + 120000,
+      })
+    );
+
+    const mockFs = {
+      ...fs,
+      writeFileSync(p, content, enc) {
+        if (typeof p === "string" && p.includes("rcpt-user-")) {
+          throw new Error("EACCES: permission denied writing receipt");
+        }
+        return fs.writeFileSync(p, content, enc);
+      },
+    };
+
+    const tStale = t0 + CLAIM_TIMEOUT_MS + 5000;
+    getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tStale,
+      dataDir,
+      fsApi: mockFs,
+    });
+
+    // Claim evidence MUST NOT be deleted if writing terminal receipt failed
+    assert.ok(fs.existsSync(claimedFilePath), "Claim file must be preserved on IO error");
+  });
+
+  it("terminates expired pending message to terminal expired receipt during UI query when consumer is disconnected", () => {
+    const { dataDir, statusDir, receiptsDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-pending-expired" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = 1700000000000;
+    const cmdId = "cmd-query-expired-1";
+
+    const enq = enqueueUserMessage({
+      petId,
+      text: "Pending message that will expire before consumer wakes",
+      commandId: cmdId,
+      ttlMs: 2000,
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+    assert.strictEqual(enq.status, "queued");
+
+    const pendingDir = path.join(dataDir, "inbox", petId, "pending");
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+
+    // Before expiration, query returns queued
+    const earlyRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => t0 + 500,
+      dataDir,
+    });
+    assert.ok(earlyRcpt);
+    assert.strictEqual(earlyRcpt.status, "queued");
+    assert.strictEqual(fs.readdirSync(pendingDir).filter((f) => f.endsWith(".json")).length, 1);
+
+    // Advance clock past TTL (t0 + 3000ms) with no consumer running
+    const tExpired = t0 + 3000;
+    const expiredRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tExpired,
+      dataDir,
+    });
+
+    assert.ok(expiredRcpt);
+    assert.strictEqual(expiredRcpt.commandId, cmdId);
+    assert.strictEqual(expiredRcpt.status, "expired");
+    assert.strictEqual(expiredRcpt.reason, "Message expired in queue before delivery");
+    assert.strictEqual(expiredRcpt.updatedAtMs, tExpired);
+
+    // On-disk receipt must be updated to expired
+    const rcptOnDisk = JSON.parse(fs.readFileSync(path.join(receiptsDir, `rcpt-user-${cmdId}.json`), "utf8"));
+    assert.strictEqual(rcptOnDisk.status, "expired");
+    assert.strictEqual(rcptOnDisk.updatedAtMs, tExpired);
+
+    // Pending and claimed queues must be empty
+    assert.strictEqual(fs.readdirSync(pendingDir).filter((f) => f.endsWith(".json")).length, 0);
+    assert.strictEqual(fs.readdirSync(claimedDir).filter((f) => f.endsWith(".json")).length, 0);
+
+    // Consumer waking up later must never claim or replay the expired message
+    const lateClaim = claimNextUserMessage({
+      petId,
+      dataDir,
+      now: () => tExpired + 5000,
+    });
+    assert.strictEqual(lateClaim, null);
+  });
+
+  it("does not intervene when consumer has already claimed the message before TTL query", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-claimed-no-interfere" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = 1700000000000;
+    const cmdId = "cmd-claimed-in-flight";
+
+    enqueueUserMessage({
+      petId,
+      text: "Message claimed by consumer before TTL check",
+      commandId: cmdId,
+      ttlMs: 5000,
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+
+    // Consumer claims at t0 + 100
+    const claim = claimNextUserMessage({
+      petId,
+      dataDir,
+      now: () => t0 + 100,
+    });
+    assert.ok(claim);
+    assert.strictEqual(claim.commandId, cmdId);
+
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+    assert.strictEqual(fs.existsSync(path.join(claimedDir, `${cmdId}.json`)), true);
+
+    // Clock reaches t0 + 6000 (past message TTL, but consumer claim is active within 60s window)
+    const tCheck = t0 + 6000;
+    const queryRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tCheck,
+      dataDir,
+    });
+
+    // Should not overwrite to expired because consumer already claimed it
+    assert.ok(queryRcpt);
+    assert.strictEqual(queryRcpt.status, "queued");
+    assert.strictEqual(fs.existsSync(path.join(claimedDir, `${cmdId}.json`)), true);
+
+    // Consumer finishes and settles to dispatched
+    const settled = settleUserMessage({
+      petId,
+      commandId: cmdId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      now: () => tCheck + 500,
+      dataDir,
+    });
+    assert.strictEqual(settled.status, "dispatched");
+
+    // Subsequent query reflects dispatched
+    const finalRcpt = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tCheck + 1000,
+      dataDir,
+    });
+    assert.ok(finalRcpt);
+    assert.strictEqual(finalRcpt.status, "dispatched");
+  });
+
+  it("does not falsely delete or mutate pending/claimed files if rename fails during concurrent race", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-rename-race" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = 1700000000000;
+    const cmdId = "cmd-rename-race";
+
+    enqueueUserMessage({
+      petId,
+      text: "Concurrent race message",
+      commandId: cmdId,
+      ttlMs: 2000,
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+
+    const pendingDir = path.join(dataDir, "inbox", petId, "pending");
+    const pendingFiles = fs.readdirSync(pendingDir).filter((f) => f.endsWith(".json"));
+    assert.strictEqual(pendingFiles.length, 1);
+
+    const mockFs = {
+      ...fs,
+      renameSync() {
+        throw new Error("ENOENT: concurrent claim already renamed file");
+      },
+    };
+
+    const tExpired = t0 + 3000;
+    const res = getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tExpired,
+      dataDir,
+      fsApi: mockFs,
+    });
+
+    assert.ok(res);
+    // Must not delete the pending file if rename throws
+    assert.strictEqual(fs.existsSync(path.join(pendingDir, pendingFiles[0])), true);
+  });
+
+  it("preserves claimed file as evidence if receipt write fails during query expiration", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-query-write-fail-evidence" });
+    createActiveSession(statusDir, petId);
+
+    const t0 = 1700000000000;
+    const cmdId = "cmd-write-fail-evidence";
+
+    enqueueUserMessage({
+      petId,
+      text: "Write fail evidence test",
+      commandId: cmdId,
+      ttlMs: 2000,
+      createdAtMs: t0,
+      now: () => t0,
+      dataDir,
+    });
+
+    const claimedDir = path.join(dataDir, "inbox", petId, "claimed");
+    const claimedFilePath = path.join(claimedDir, `${cmdId}.json`);
+
+    const mockFs = {
+      ...fs,
+      writeFileSync(p, content, enc) {
+        if (typeof p === "string" && p.includes("rcpt-user-")) {
+          throw new Error("EACCES: permission denied writing receipt");
+        }
+        return fs.writeFileSync(p, content, enc);
+      },
+    };
+
+    const tExpired = t0 + 3000;
+    getUserMessageReceipt({
+      petId,
+      commandId: cmdId,
+      now: () => tExpired,
+      dataDir,
+      fsApi: mockFs,
+    });
+
+    // Claim evidence MUST NOT be deleted if writing expired receipt failed
+    assert.ok(fs.existsSync(claimedFilePath), "Claim file must be preserved in claimed/ on IO error");
   });
 });
 

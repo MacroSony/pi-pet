@@ -82,9 +82,11 @@ test("end-to-end local own-session inbox flow with route, root runtime, Pi consu
   try {
     const rawSessionA = "session-e2e-pi-a";
     const rawSessionB = "session-e2e-pi-b";
+    const canonicalSessionA = "pi:session-e2e-pi-a";
+    const canonicalSessionB = "pi:session-e2e-pi-b";
 
-    const petIdA = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: rawSessionA });
-    const petIdB = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: rawSessionB });
+    const petIdA = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: canonicalSessionA });
+    const petIdB = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: canonicalSessionB });
 
     assert.notEqual(petIdA, petIdB, "Pet A and Pet B IDs must be distinct");
 
@@ -94,12 +96,12 @@ test("end-to-end local own-session inbox flow with route, root runtime, Pi consu
     // Active session status files for both sessions
     fs.writeFileSync(
       path.join(statusDir, `status-${petIdA}.json`),
-      JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: rawSessionA }),
+      JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: canonicalSessionA }),
       "utf8"
     );
     fs.writeFileSync(
       path.join(statusDir, `status-${petIdB}.json`),
-      JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: rawSessionB }),
+      JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: canonicalSessionB }),
       "utf8"
     );
 

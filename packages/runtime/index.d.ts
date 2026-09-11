@@ -166,6 +166,15 @@ export interface SettleUserMessageOptions extends PetIdentityInput {
   fsApi?: unknown;
 }
 
+export interface GetUserMessageReceiptOptions extends PetIdentityInput {
+  petId?: string;
+  commandId?: string;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
 export declare function derivePetId(identity?: PetIdentityInput): string;
 export declare function validateExpression(payload?: { text?: string; emotion?: string }): ExpressionValidationResult;
 export declare function expressExpression(options?: ExpressExpressionOptions): InteractionReceipt;
@@ -175,6 +184,7 @@ export declare function atomicWriteJson(targetPath: string, data: unknown, fsApi
 export declare function enqueueUserMessage(options?: EnqueueUserMessageOptions): UserMessageReceipt;
 export declare function claimNextUserMessage(options?: ClaimNextUserMessageOptions): ClaimedUserMessage | null;
 export declare function settleUserMessage(options?: SettleUserMessageOptions): UserMessageReceipt;
+export declare function getUserMessageReceipt(options?: GetUserMessageReceiptOptions): UserMessageReceipt | null;
 
 export declare const VALID_EMOTIONS: readonly ExpressionEmotion[];
 export declare const DEFAULT_TTL_MS: 30000;

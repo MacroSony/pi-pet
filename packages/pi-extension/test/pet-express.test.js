@@ -65,11 +65,11 @@ test("pet_express registers and delivers with runtime module configured", async 
   delete process.env.PI_PET_PROFILE_ID;
   process.env.PI_PET_CLAWD_REMOTE_CONFIG = path.join(dataDir, "nonexistent.json");
 
-  const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "ses-test-1" });
+  const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "pi:ses-test-1" });
   fs.mkdirSync(path.join(dataDir, "status"), { recursive: true });
   fs.writeFileSync(
     path.join(dataDir, "status", `status-${petId}.json`),
-    JSON.stringify({ state: "idle" })
+    JSON.stringify({ state: "idle", agentId: "pi", rawSessionId: "pi:ses-test-1" })
   );
 
   let toolDef = null;
@@ -175,7 +175,7 @@ test("local-unknown-identity falls back to remote POST and returns delivered rec
     assert.equal(req.headers["content-type"], "application/json");
     assert.equal(req.body.schemaVersion, "1");
     assert.equal(req.body.kind, "pet_expression");
-    assert.equal(req.body.rawSessionId, "ses-remote-1");
+    assert.equal(req.body.rawSessionId, "pi:ses-remote-1");
     assert.equal(req.body.agentId, "pi");
     assert.equal(req.body.text, "hello remote");
     assert.equal(req.body.emotion, "happy");
@@ -354,6 +354,7 @@ test("delivers directly to remote when runtime module is absent but remote confi
     assert.equal(result.details.commandId, "cmd_direct_1");
     assert.equal(result.isError, false);
     assert.equal(requests.length, 1);
+    assert.equal(requests[0].body.rawSessionId, "pi:ses-direct-1");
   } finally {
     await testServer.close();
   }
@@ -398,7 +399,7 @@ test("rejects payload exceeding 16 KiB limit early", async () => {
 test("remote request builder emits the canonical wire payload", () => {
   const fixedTime = 1700000000000;
   const body = extension.buildRemoteExpressionBody({
-    rawSessionId: "ses-123",
+    rawSessionId: "pi:ses-123",
     toolCallId: "call:abc/123",
     params: { text: "hello", emotion: "happy" },
     now: () => fixedTime,
@@ -407,7 +408,7 @@ test("remote request builder emits the canonical wire payload", () => {
   assert.deepEqual(body, {
     schemaVersion: "1",
     kind: "pet_expression",
-    rawSessionId: "ses-123",
+    rawSessionId: "pi:ses-123",
     agentId: "pi",
     createdAtMs: fixedTime,
     dedupKey: "tc_call_abc_123",
