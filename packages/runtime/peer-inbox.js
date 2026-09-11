@@ -1441,6 +1441,21 @@ function settlePeerMessage(options = {}) {
     });
   }
 
+  if (receipt.status === "dispatched" && typeof options?.onDispatched === "function") {
+    try {
+      const cbResult = options.onDispatched(receipt);
+      if (cbResult && typeof cbResult.then === "function") {
+        if (typeof cbResult.catch === "function") {
+          cbResult.catch(() => {});
+        } else {
+          cbResult.then(null, () => {});
+        }
+      }
+    } catch {
+      // Callback error must be swallowed and must not alter dispatched receipt.
+    }
+  }
+
   try { fsApi.unlinkSync(claimedFilePath); } catch {}
 
   return receipt;

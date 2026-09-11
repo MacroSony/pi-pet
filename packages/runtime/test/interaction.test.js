@@ -525,4 +525,45 @@ describe("Phase A interaction contract §8 scenarios", () => {
     // Assert old receipt was pruned
     assert.strictEqual(fs.existsSync(oldReceiptPath), false);
   });
+
+  it("allows tiny valid expression when huge env is injected while huge text payload rejects", () => {
+    const { dataDir, statusDir, eventsDir } = createTestEnvironment();
+    const petId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-huge-env-expr" });
+    createActiveSession(statusDir, petId);
+
+    const hugeEnv = {
+      HUGE_VAR1: "A".repeat(64 * 1024), // 64 KiB
+      HUGE_VAR2: "B".repeat(64 * 1024),
+    };
+
+    // 1. Tiny valid expression with huge injected env delivers
+    const delivered = expressExpression({
+      profileId: "local",
+      agentId: "pi",
+      rawSessionId: "s-huge-env-expr",
+      text: "hello world with huge env",
+      dataDir,
+      env: hugeEnv,
+    });
+    assert.strictEqual(delivered.status, "delivered");
+    assert.strictEqual(delivered.payloadEcho.text, "hello world with huge env");
+    assert.strictEqual(delivered.petId, petId);
+
+    const eventPath = path.join(eventsDir, `event-${petId}.json`);
+    assert.ok(fs.existsSync(eventPath));
+    const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+    assert.strictEqual(event.payload.text, "hello world with huge env");
+
+    // 2. Huge actual text/payload exceeding 16 KiB still rejects
+    const oversized = expressExpression({
+      profileId: "local",
+      agentId: "pi",
+      rawSessionId: "s-huge-env-expr",
+      text: "X".repeat(17000),
+      dataDir,
+      env: hugeEnv,
+    });
+    assert.strictEqual(oversized.status, "rejected");
+    assert.match(oversized.reason, /16 KiB/);
+  });
 });

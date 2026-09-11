@@ -27,6 +27,7 @@ const {
 
 const runtimeModule = require("..");
 const interactionModule = require("../interaction");
+const peerInboxModule = require("../peer-inbox");
 
 const temporaryDirs = [];
 
@@ -40,10 +41,12 @@ function createTestEnvironment() {
   const dataDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pet-test-peer-inbox-"));
   temporaryDirs.push(dataDir);
   const statusDir = path.join(dataDir, "status");
+  const eventsDir = path.join(dataDir, "events");
   const receiptsDir = path.join(dataDir, "receipts");
   fs.mkdirSync(statusDir, { recursive: true });
+  fs.mkdirSync(eventsDir, { recursive: true });
   fs.mkdirSync(receiptsDir, { recursive: true });
-  return { dataDir, statusDir, receiptsDir };
+  return { dataDir, statusDir, eventsDir, receiptsDir };
 }
 
 function createActiveSession(statusDir, petId, state = "idle") {
@@ -1072,7 +1075,7 @@ describe("Peer Message Inbox: Claim Token and Settlement", () => {
   });
 
   it("allows settling message even when huge env is injected", () => {
-    const { dataDir, statusDir } = createTestEnvironment();
+    const { dataDir, statusDir, eventsDir } = createTestEnvironment();
     const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-huge-env-settle" });
     createActiveSession(statusDir, targetPetId);
 
@@ -1093,6 +1096,8 @@ describe("Peer Message Inbox: Claim Token and Settlement", () => {
       env: hugeEnv,
     });
     assert.strictEqual(settleRes.status, "dispatched");
+    const eventPath = path.join(eventsDir, `event-${targetPetId}.json`);
+    assert.ok(fs.existsSync(eventPath), "bubble event file should exist when huge env is injected");
   });
 
   it("if pending write succeeds but receipt write fails, deletes pending before returning failed", () => {
@@ -1776,5 +1781,475 @@ describe("Peer Message Inbox: User Inbox & Peer Inbox Coexistence & Isolation", 
     });
     assert.strictEqual(peerRcpt.status, "dispatched");
     assert.strictEqual(peerRcpt.kind, "peer_message");
+  });
+});
+
+describe("Peer Message Inbox: Target Pet Source Bubble & at-most-once Dispatch", () => {
+  it("new dispatched settle writes exactly one expression event with target petId and bounded sanitized source wording", () => {
+    const { dataDir, statusDir, eventsDir, receiptsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-1" });
+    createActiveSession(statusDir, targetPetId);
+
+    const sourceDisplayName = "Alice Developer";
+    const sourceHost = "workstation-mac";
+    const peerText = "Secret peer message body that MUST NEVER appear in bubble";
+
+    const enqueued = enqueuePeerMessage({
+      sourcePetId: "pet-source-abc",
+      sourceDisplayName,
+      sourceHost,
+      targetPetId,
+      text: peerText,
+      dataDir,
+    });
+    assert.strictEqual(enqueued.status, "queued");
+
+    const claimed = claimNextPeerMessage({ targetPetId, dataDir });
+    assert.ok(claimed);
+
+    const settled = settlePeerMessage({
+      targetPetId,
+      messageId: claimed.messageId,
+      claimToken: claimed.claimToken,
+      status: "dispatched",
+      dataDir,
+    });
+    assert.strictEqual(settled.status, "dispatched");
+
+    // Verify expression event was written for targetPetId
+    const eventPath = path.join(eventsDir, `event-${targetPetId}.json`);
+    assert.ok(fs.existsSync(eventPath), "event file should exist");
+    const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+
+    assert.strictEqual(event.schemaVersion, "1");
+    assert.strictEqual(event.kind, "expression");
+    assert.strictEqual(event.petId, targetPetId);
+    assert.strictEqual(event.payload.text, `Message from ${sourceDisplayName} @ ${sourceHost}`);
+    assert.strictEqual(event.payload.speak, false);
+    assert.strictEqual(event.payload.priority, 3);
+    assert.strictEqual(event.payload.durationMs, 2500);
+
+    // Verify deterministic eventId
+    const expectedHash = crypto.createHash("sha256").update(claimed.messageId).digest("hex").slice(0, 40);
+    const expectedEventId = `notice_${expectedHash}`;
+    assert.strictEqual(event.eventId, expectedEventId);
+    assert.strictEqual(expectedEventId.length, 47);
+    assert.ok(expectedEventId.length <= 64);
+
+    // Verify expression receipt was written with status delivered
+    const bubbleRcptPath = path.join(receiptsDir, `rcpt-${expectedEventId}.json`);
+    assert.ok(fs.existsSync(bubbleRcptPath), "bubble receipt file should exist");
+    const bubbleRcpt = JSON.parse(fs.readFileSync(bubbleRcptPath, "utf8"));
+    assert.strictEqual(bubbleRcpt.status, "delivered");
+    assert.strictEqual(bubbleRcpt.petId, targetPetId);
+    assert.strictEqual(bubbleRcpt.commandId, expectedEventId);
+    assert.strictEqual(bubbleRcpt.dedupKey, expectedEventId);
+    assert.strictEqual(bubbleRcpt.payloadEcho.text, `Message from ${sourceDisplayName} @ ${sourceHost}`);
+
+    // Verify peer receipt also exists and is distinct
+    const peerRcptPath = path.join(receiptsDir, `rcpt-peer-${claimed.messageId}.json`);
+    assert.ok(fs.existsSync(peerRcptPath), "peer receipt should exist");
+    const peerRcpt = JSON.parse(fs.readFileSync(peerRcptPath, "utf8"));
+    assert.strictEqual(peerRcpt.status, "dispatched");
+  });
+
+  it("bubble sanitizes C0/C1 controls, bidi controls, collapses whitespace, clamps code points to <= 120, and falls back to Pi and local", () => {
+    const { dataDir, statusDir, eventsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-sanitize" });
+    createActiveSession(statusDir, targetPetId);
+
+    // Test 1: Bidi controls and C1 / invisible controls in provenance
+    const bidiName = "\u202eEvilName\u202c \x7f\x80\x9f \t  Worker \u061C\u200E";
+    const bidiHost = "  Host\u2066\u2069\u202A\u202E   Box\uFEFF  ";
+
+    const enq1 = enqueuePeerMessage({
+      sourcePetId: "pet-source-1",
+      sourceDisplayName: bidiName,
+      sourceHost: bidiHost,
+      targetPetId,
+      text: "test sanitization",
+      dataDir,
+    });
+    assert.strictEqual(enq1.status, "queued");
+    const claim1 = claimNextPeerMessage({ targetPetId, dataDir });
+    assert.ok(claim1);
+    settlePeerMessage({
+      targetPetId,
+      messageId: claim1.messageId,
+      claimToken: claim1.claimToken,
+      status: "dispatched",
+      dataDir,
+    });
+
+    const event1 = JSON.parse(fs.readFileSync(path.join(eventsDir, `event-${targetPetId}.json`), "utf8"));
+    assert.strictEqual(event1.payload.text, "Message from EvilName Worker @ Host Box");
+
+    // Test 2: Fallbacks to Pi and local when missing, null, or all controls/empty
+    const targetPetId2 = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-fallback" });
+    createActiveSession(statusDir, targetPetId2);
+
+    const claimRecord = {
+      schemaVersion: "1",
+      kind: "peer_message",
+      messageId: "msg_fallback_1",
+      dedupKey: "msg_fallback_1",
+      targetPetId: targetPetId2,
+      sourcePetId: "pet-fallback",
+      sourceDisplayName: "\x00\x1f\u200E   \u202E",
+      sourceHost: "\t  \r\n",
+      text: "test fallback",
+      deliverAs: "followUp",
+      threadId: "thr_msg_fallback_1",
+      hopCount: 0,
+      maxHops: 1,
+      replyHandle: null,
+      createdAtMs: Date.now(),
+      expiresAtMs: Date.now() + 60000,
+      claimToken: "claim-tok-fallback",
+      claimedAtMs: Date.now(),
+    };
+    const claimedPath = path.join(dataDir, "peer-inbox", targetPetId2, "claimed", "msg_fallback_1.json");
+    fs.mkdirSync(path.dirname(claimedPath), { recursive: true });
+    fs.writeFileSync(claimedPath, JSON.stringify(claimRecord), "utf8");
+
+    settlePeerMessage({
+      targetPetId: targetPetId2,
+      messageId: "msg_fallback_1",
+      claimToken: "claim-tok-fallback",
+      status: "dispatched",
+      dataDir,
+    });
+
+    const event2 = JSON.parse(fs.readFileSync(path.join(eventsDir, `event-${targetPetId2}.json`), "utf8"));
+    assert.strictEqual(event2.payload.text, "Message from Pi @ local");
+
+    // Test 3: Unicode code point clamp <= 120 with emojis
+    const targetPetId3 = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-clamp" });
+    createActiveSession(statusDir, targetPetId3);
+
+    const longEmojiName = "🤖".repeat(80);
+    const longEmojiHost = "🚀".repeat(80);
+
+    const claimRecord3 = {
+      ...claimRecord,
+      messageId: "msg_clamp_1",
+      targetPetId: targetPetId3,
+      sourceDisplayName: longEmojiName,
+      sourceHost: longEmojiHost,
+      claimToken: "claim-tok-clamp",
+    };
+    const claimedPath3 = path.join(dataDir, "peer-inbox", targetPetId3, "claimed", "msg_clamp_1.json");
+    fs.mkdirSync(path.dirname(claimedPath3), { recursive: true });
+    fs.writeFileSync(claimedPath3, JSON.stringify(claimRecord3), "utf8");
+
+    settlePeerMessage({
+      targetPetId: targetPetId3,
+      messageId: "msg_clamp_1",
+      claimToken: "claim-tok-clamp",
+      status: "dispatched",
+      dataDir,
+    });
+
+    const event3 = JSON.parse(fs.readFileSync(path.join(eventsDir, `event-${targetPetId3}.json`), "utf8"));
+    const codePoints = Array.from(event3.payload.text);
+    assert.strictEqual(codePoints.length, 120);
+    assert.ok(event3.payload.text.startsWith("Message from 🤖"));
+  });
+
+  it("never includes peer message body, IDs, handles, tokens, thread, or cwd in bubble text", () => {
+    const { dataDir, statusDir, eventsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-leak-check" });
+    createActiveSession(statusDir, targetPetId);
+
+    const sensitiveBody = "TOP_SECRET_SESSION_TOKEN_123456789";
+    const sensitiveMsgId = "msg_sensitive_987654";
+    const sensitiveThreadId = "thr_sensitive_112233";
+    const sensitiveReplyHandle = "psh_sensitive_reply_handle_998877";
+
+    const enq = enqueuePeerMessage({
+      sourcePetId: "pet-source-secrets",
+      sourceDisplayName: "SenderAgent",
+      sourceHost: "SenderHost",
+      targetPetId,
+      text: sensitiveBody,
+      messageId: sensitiveMsgId,
+      threadId: sensitiveThreadId,
+      replyHandle: sensitiveReplyHandle,
+      dataDir,
+    });
+    const claim = claimNextPeerMessage({ targetPetId, dataDir });
+
+    settlePeerMessage({
+      targetPetId,
+      messageId: sensitiveMsgId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      dataDir,
+    });
+
+    const event = JSON.parse(fs.readFileSync(path.join(eventsDir, `event-${targetPetId}.json`), "utf8"));
+    const bubbleText = event.payload.text;
+
+    assert.strictEqual(bubbleText, "Message from SenderAgent @ SenderHost");
+    assert.strictEqual(bubbleText.includes(sensitiveBody), false, "must not leak body text");
+    assert.strictEqual(bubbleText.includes(sensitiveMsgId), false, "must not leak messageId");
+    assert.strictEqual(bubbleText.includes(sensitiveThreadId), false, "must not leak threadId");
+    assert.strictEqual(bubbleText.includes(sensitiveReplyHandle), false, "must not leak replyHandle");
+    assert.strictEqual(bubbleText.includes(claim.claimToken), false, "must not leak claimToken");
+    assert.strictEqual(bubbleText.includes("pet-source-secrets"), false, "must not leak sourcePetId");
+    assert.strictEqual(bubbleText.includes(targetPetId), false, "must not leak targetPetId in text");
+    assert.strictEqual(bubbleText.includes(process.cwd()), false, "must not leak cwd");
+  });
+
+  it("failed or expired settlements emit NO bubble event", () => {
+    const { dataDir, statusDir, eventsDir, receiptsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-failed" });
+    createActiveSession(statusDir, targetPetId);
+
+    // 1. Failed settlement
+    const enq1 = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "msg failed test", dataDir });
+    const claim1 = claimNextPeerMessage({ targetPetId, dataDir });
+    const settleFailed = settlePeerMessage({
+      targetPetId,
+      messageId: claim1.messageId,
+      claimToken: claim1.claimToken,
+      status: "failed",
+      reason: "Handler execution failed",
+      dataDir,
+    });
+    assert.strictEqual(settleFailed.status, "failed");
+    assert.strictEqual(fs.existsSync(path.join(eventsDir, `event-${targetPetId}.json`)), false, "no event on failed");
+
+    // 2. Expired settlement
+    const enq2 = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "msg expired test", dataDir });
+    const claim2 = claimNextPeerMessage({ targetPetId, dataDir });
+    const settleExpired = settlePeerMessage({
+      targetPetId,
+      messageId: claim2.messageId,
+      claimToken: claim2.claimToken,
+      status: "expired",
+      reason: "TTL expired during processing",
+      dataDir,
+    });
+    assert.strictEqual(settleExpired.status, "expired");
+    assert.strictEqual(fs.existsSync(path.join(eventsDir, `event-${targetPetId}.json`)), false, "no event on expired");
+
+    // Verify no notice receipt was written
+    const receiptFiles = fs.readdirSync(receiptsDir);
+    const noticeReceipts = receiptFiles.filter((f) => f.startsWith("rcpt-notice_"));
+    assert.strictEqual(noticeReceipts.length, 0);
+  });
+
+  it("at-most-once: settle retry / existing terminal receipt emits NO second callback or event", () => {
+    const { dataDir, statusDir, eventsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-dedup" });
+    createActiveSession(statusDir, targetPetId);
+
+    let callbackCount = 0;
+    const customOnDispatched = () => {
+      callbackCount++;
+    };
+
+    const enq = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "dedup test", dataDir });
+    const claim = claimNextPeerMessage({ targetPetId, dataDir });
+
+    // Initial settlement with simulated unlink failure (claim file retained to test existing terminal receipt path)
+    const claimedPath = path.join(dataDir, "peer-inbox", targetPetId, "claimed", `${claim.messageId}.json`);
+    const realFs = fs;
+    const retainClaimFs = {
+      ...realFs,
+      unlinkSync(targetPath) {
+        if (targetPath === claimedPath) {
+          // Simulate unlink failure / crash after receipt write
+          return;
+        }
+        return realFs.unlinkSync(targetPath);
+      },
+    };
+
+    const settle1 = settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      onDispatched: customOnDispatched,
+      dataDir,
+      fsApi: retainClaimFs,
+    });
+    assert.strictEqual(settle1.status, "dispatched");
+    assert.strictEqual(callbackCount, 1);
+    assert.strictEqual(fs.existsSync(claimedPath), true, "claim was retained");
+
+    const eventPath = path.join(eventsDir, `event-${targetPetId}.json`);
+    assert.ok(fs.existsSync(eventPath));
+
+    // Retry settlement with existing terminal receipt on disk
+    const settleRetry = settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      onDispatched: customOnDispatched,
+      dataDir,
+    });
+    assert.strictEqual(settleRetry.status, "dispatched");
+    assert.strictEqual(callbackCount, 1, "callback must NOT be called second time on retry");
+    assert.strictEqual(fs.existsSync(claimedPath), false, "retry unlinked leftover claim");
+
+    // Third call after claim unlinked: returns ClaimNotFound without callback
+    const settleThird = settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      onDispatched: customOnDispatched,
+      dataDir,
+    });
+    assert.strictEqual(settleThird.status, "rejected");
+    assert.strictEqual(callbackCount, 1, "callback still not called on missing claim");
+  });
+
+  it("callback throw or rejected expression does not alter dispatched receipt", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-errors" });
+    createActiveSession(statusDir, targetPetId, "idle");
+
+    // 1. Caller onDispatched throws sync error
+    const enq1 = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "error test 1", dataDir });
+    const claim1 = claimNextPeerMessage({ targetPetId, dataDir });
+
+    const settle1 = settlePeerMessage({
+      targetPetId,
+      messageId: claim1.messageId,
+      claimToken: claim1.claimToken,
+      status: "dispatched",
+      onDispatched: () => {
+        throw new Error("Synchronous callback error simulation");
+      },
+      dataDir,
+    });
+    assert.strictEqual(settle1.status, "dispatched", "dispatched receipt must remain dispatched even if callback throws");
+
+    // 2. Caller onDispatched returns a rejected thenable
+    const enq2 = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "error test 2", dataDir });
+    const claim2 = claimNextPeerMessage({ targetPetId, dataDir });
+
+    const settle2 = settlePeerMessage({
+      targetPetId,
+      messageId: claim2.messageId,
+      claimToken: claim2.claimToken,
+      status: "dispatched",
+      onDispatched: () => Promise.reject(new Error("Async rejection simulation")),
+      dataDir,
+    });
+    assert.strictEqual(settle2.status, "dispatched", "dispatched receipt must remain dispatched even if callback returns rejected promise");
+
+    // 3. expressExpression rejects (e.g. status file missing / unknown session during bubble emission)
+    const targetPetId3 = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-bubble-unknown-status" });
+    createActiveSession(statusDir, targetPetId3);
+    const enq3 = enqueuePeerMessage({ ...defaultSource, targetPetId: targetPetId3, text: "error test 3", dataDir });
+    const claim3 = claimNextPeerMessage({ targetPetId: targetPetId3, dataDir });
+
+    // Remove status file right before settle so expressExpression fails with UnknownPetIdentity
+    fs.unlinkSync(path.join(statusDir, `status-${targetPetId3}.json`));
+
+    const settle3 = settlePeerMessage({
+      targetPetId: targetPetId3,
+      messageId: claim3.messageId,
+      claimToken: claim3.claimToken,
+      status: "dispatched",
+      dataDir,
+    });
+    assert.strictEqual(settle3.status, "dispatched", "peer settlement succeeds even when expression rejects");
+  });
+
+  it("core peer-inbox module exposes onDispatched seam invoked only on new dispatched receipt", () => {
+    const { dataDir, statusDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-core-seam" });
+    createActiveSession(statusDir, targetPetId);
+
+    let seamCalled = 0;
+    let seamReceipt = null;
+
+    const enq = enqueuePeerMessage({ ...defaultSource, targetPetId, text: "core seam test", dataDir });
+    const claim = claimNextPeerMessage({ targetPetId, dataDir });
+
+    const coreSettle = peerInboxModule.settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      onDispatched: (receipt) => {
+        seamCalled++;
+        seamReceipt = receipt;
+      },
+      dataDir,
+    });
+
+    assert.strictEqual(coreSettle.status, "dispatched");
+    assert.strictEqual(seamCalled, 1);
+    assert.strictEqual(seamReceipt.messageId, claim.messageId);
+    assert.strictEqual(seamReceipt.status, "dispatched");
+
+    // Retry core settle: seam must not be re-invoked
+    peerInboxModule.settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      onDispatched: () => {
+        seamCalled++;
+      },
+      dataDir,
+    });
+    assert.strictEqual(seamCalled, 1, "must not re-invoke on retry");
+  });
+
+  it("root runtime module exported settlePeerMessage is remote-compatible wrapper with huge env and PI_PET_DATA_DIR", () => {
+    const { dataDir, statusDir, eventsDir, receiptsDir } = createTestEnvironment();
+    const targetPetId = derivePetId({ profileId: "local", agentId: "pi", rawSessionId: "s-root-export" });
+    createActiveSession(statusDir, targetPetId);
+
+    const hugeEnv = {
+      PI_PET_DATA_DIR: dataDir,
+      HUGE_ENV_VAR_1: "A".repeat(64 * 1024),
+      HUGE_ENV_VAR_2: "B".repeat(64 * 1024),
+    };
+
+    const enq = runtimeModule.enqueuePeerMessage({
+      ...defaultSource,
+      sourceDisplayName: "RemotePi",
+      sourceHost: "coordinator-ssh",
+      targetPetId,
+      text: "remote wrapper test",
+      env: hugeEnv,
+    });
+    assert.strictEqual(enq.status, "queued");
+
+    const claim = runtimeModule.claimNextPeerMessage({ targetPetId, env: hugeEnv });
+    assert.ok(claim);
+
+    const settled = runtimeModule.settlePeerMessage({
+      targetPetId,
+      messageId: claim.messageId,
+      claimToken: claim.claimToken,
+      status: "dispatched",
+      env: hugeEnv,
+    });
+
+    assert.strictEqual(settled.status, "dispatched");
+
+    // Verify source bubble expression event was written via env.PI_PET_DATA_DIR resolution
+    const eventPath = path.join(eventsDir, `event-${targetPetId}.json`);
+    assert.ok(fs.existsSync(eventPath), "bubble event file should exist");
+    const event = JSON.parse(fs.readFileSync(eventPath, "utf8"));
+    assert.strictEqual(event.payload.text, "Message from RemotePi @ coordinator-ssh");
+
+    // Verify bubble expression receipt was written with delivered status
+    const expectedHash = crypto.createHash("sha256").update(claim.messageId).digest("hex").slice(0, 40);
+    const bubbleRcptPath = path.join(receiptsDir, `rcpt-notice_${expectedHash}.json`);
+    assert.ok(fs.existsSync(bubbleRcptPath), "bubble receipt file should exist");
+    const bubbleRcpt = JSON.parse(fs.readFileSync(bubbleRcptPath, "utf8"));
+    assert.strictEqual(bubbleRcpt.status, "delivered");
   });
 });

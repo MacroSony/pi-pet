@@ -37,7 +37,7 @@ const {
   claimNextPeerMessage,
   enqueuePeerMessage,
   getPeerMessageReceipt,
-  settlePeerMessage,
+  settlePeerMessage: coreSettlePeerMessage,
 } = require("./peer-inbox");
 
 const DEFAULT_TTL_MS = 30000;
@@ -46,6 +46,29 @@ const MAX_TTL_MS = 300000;
 
 const VALID_EMOTIONS = Object.freeze(["happy", "shy", "shocked", "sad", "celebrate"]);
 const VALID_EMOTIONS_SET = new Set(VALID_EMOTIONS);
+
+const EXPRESSION_WIRE_FIELDS = Object.freeze([
+  "petId",
+  "profileId",
+  "agentId",
+  "rawSessionId",
+  "text",
+  "emotion",
+  "dedupKey",
+  "commandId",
+  "ttlMs",
+  "createdAtMs",
+]);
+
+function extractWireEnvelope(options, allowedFields) {
+  const envelope = {};
+  for (const key of allowedFields) {
+    if (options[key] !== undefined) {
+      envelope[key] = options[key];
+    }
+  }
+  return envelope;
+}
 
 function validateExpression(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -99,9 +122,10 @@ function expressExpression(options = {}) {
   }
 
   // 1. Validate envelope size
+  const envelope = extractWireEnvelope(options, EXPRESSION_WIRE_FIELDS);
   let serializedSize;
   try {
-    serializedSize = Buffer.byteLength(JSON.stringify(options), "utf8");
+    serializedSize = Buffer.byteLength(JSON.stringify(envelope), "utf8");
   } catch {
     return {
       schemaVersion: "1",
@@ -278,11 +302,12 @@ function expressExpression(options = {}) {
     for (const file of entries) {
       if (!file.startsWith("rcpt-") || !file.endsWith(".json")) continue;
       if (file.startsWith("rcpt-user-")) continue; // Avoid matching user receipts
+      if (file.startsWith("rcpt-peer-")) continue; // Avoid matching peer receipts
       const filePath = path.join(receiptsDir, file);
       try {
         const content = fsApi.readFileSync(filePath, "utf8");
         const rcpt = JSON.parse(content);
-        if (rcpt.kind === "user_message") continue;
+        if (rcpt.kind === "user_message" || rcpt.kind === "peer_message") continue;
 
         const rcptTime = rcpt.createdAtMs || rcpt.updatedAtMs || 0;
         if (rcptTime > 0 && nowMs - rcptTime > GC_WINDOW_MS) {
@@ -360,6 +385,88 @@ function expressExpression(options = {}) {
   }
 
   return receipt;
+}
+
+const INVISIBLE_AND_BIDI_RE = /[\u0000-\u001F\u007F-\u009F\u061C\u200E\u200F\u202A-\u202E\u2066-\u2069\u200B-\u200D\u2060\uFEFF]/g;
+
+function sanitizeProvenanceText(value, fallback) {
+  if (typeof value !== "string") {
+    return fallback;
+  }
+  const cleaned = value
+    .replace(INVISIBLE_AND_BIDI_RE, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return cleaned.length > 0 ? cleaned : fallback;
+}
+
+function emitPeerSourceBubble(receipt, options = {}) {
+  if (!receipt || typeof receipt !== "object" || !receipt.targetPetId || typeof receipt.targetPetId !== "string") {
+    return;
+  }
+
+  const sourceDisplayName = sanitizeProvenanceText(receipt.sourceDisplayName, "Pi");
+  const sourceHost = sanitizeProvenanceText(receipt.sourceHost, "local");
+  const rawText = `Message from ${sourceDisplayName} @ ${sourceHost}`;
+
+  const codePoints = Array.from(rawText);
+  const text = codePoints.length > 120 ? codePoints.slice(0, 120).join("") : rawText;
+
+  const messageId = receipt.messageId || "";
+  const hash = crypto.createHash("sha256").update(String(messageId)).digest("hex");
+  const commandId = `notice_${hash.slice(0, 40)}`;
+
+  try {
+    expressExpression({
+      petId: receipt.targetPetId,
+      text,
+      commandId,
+      dedupKey: commandId,
+      ttlMs: 5000,
+      ...(options.dataDir ? { dataDir: options.dataDir } : {}),
+      ...(options.env ? { env: options.env } : {}),
+      ...(options.fsApi ? { fsApi: options.fsApi } : {}),
+      ...(typeof options.now === "function" ? { now: options.now } : {}),
+    });
+  } catch {
+    // Best effort: rejected/failed expression receipt does not alter peer dispatched receipt
+  }
+}
+
+function settlePeerMessage(options = {}) {
+  if (!options || typeof options !== "object" || Array.isArray(options)) {
+    return coreSettlePeerMessage(options);
+  }
+
+  const callerOnDispatched = typeof options.onDispatched === "function" ? options.onDispatched : null;
+
+  const wrappedOnDispatched = (receipt) => {
+    if (callerOnDispatched) {
+      try {
+        const callerRes = callerOnDispatched(receipt);
+        if (callerRes && typeof callerRes.then === "function") {
+          if (typeof callerRes.catch === "function") {
+            callerRes.catch(() => {});
+          } else {
+            callerRes.then(null, () => {});
+          }
+        }
+      } catch {
+        // Caller callback error must not alter settlement or throw
+      }
+    }
+
+    try {
+      emitPeerSourceBubble(receipt, options);
+    } catch {
+      // Bubble expression is best-effort
+    }
+  };
+
+  return coreSettlePeerMessage({
+    ...options,
+    onDispatched: wrappedOnDispatched,
+  });
 }
 
 module.exports = {
