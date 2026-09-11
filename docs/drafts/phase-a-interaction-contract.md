@@ -2,6 +2,11 @@
 
 > Version: `1.1.0-draft` | Target: `packages/runtime/` | Baseline: Phase-1 Extraction
 >
+> Status: the Phase A contract and Phase B `pet_express` path are implemented;
+> this file remains the detailed expression design record. Local Pi own-session
+> input is documented separately in [PI-INBOX-CONTRACT.md](../PI-INBOX-CONTRACT.md);
+> remote input, Team and movement work follow [PLAN.md](../../PLAN.md).
+>
 > Changelog 2026-09-09: owner decisions incorporated — file-watch transport confirmed;
 > `delivered` = write-ack for v1 (renderer playback ack deferred); receipts GC 24h;
 > single agent-facing action tool; `$schema` URI ceremony removed; agent never handles
@@ -53,8 +58,8 @@ The contract has **two views**. The agent only ever sees this one.
 
 ### 2.2 Future tools (not in Phase B)
 
-- `move` parameter: added to `pet_express` as an optional field in Phase D, only when actually implemented (additive, backward compatible). Not declared before implementation — a callable-but-inert field is worse than absence.
-- `pet_get_context()`: separate **query** tool in Phase D. Queries and actions have different semantics (idempotency, receipts) and are not merged.
+- Semantic layout actions (`huddle`, `pair`, `dismiss`, `celebrate`, `disagree`) are deferred until the local spatial coordinator exists. Agents will not receive exact-coordinate or per-frame window control. Whether the final surface is a separate `pet_arrange` tool or a bounded action field is decided with that implementation; no callable-but-inert field is declared early.
+- `pet_get_context()`: separate **query** tool in the spatial milestone. Queries and actions have different semantics (idempotency, receipts) and are not merged.
 
 ---
 
@@ -104,7 +109,7 @@ A command is the validated in-process request at the adapter boundary:
 ```
 
 - `commandId` (adapter-generated, ULID/UUIDv4, ≤64 chars), `dedupKey` (defaults to `commandId`), `createdAtMs`, `ttlMs` (default 30000, min 1000, max 300000) are all adapter-side. The agent never supplies them.
-- `kind`: `"notify"` | `"react"` in Phase B. (`"user_message"` Phase C, `"get_context"`/`"move_to"` Phase D.)
+- `kind`: `"notify"` | `"react"` in Phase B. Future input/query/layout commands receive their own reviewed contracts rather than inheriting this expression schema.
 - In v1 the command has no file of its own; its durable artifacts are the PetEvent (§4.2) and the DeliveryReceipt (§4.3).
 
 ### 4.2 PetEvent (persisted; renderer-consumed)
@@ -273,9 +278,8 @@ State, event, and receipt files are plain local files. Strictly forbidden in any
 ### Deferred
 
 1. **Renderer playback confirmation** (owner wants eventually): play-ack receipt written by renderer; splits `delivered` into `dispatched`/`delivered` with schema version bump.
-2. **`move` optional field** on `pet_express`: Phase D, only when implemented.
-3. **`pet_get_context()` query tool**: Phase D.
-4. **TTS (`speak: true`)**: after bubble text is proven; field reserved in payload, always `false` in Phase B.
+2. **Semantic layout intents**: implemented only with the spatial coordinator; no Agent-controlled exact coordinates.
+3. **`pet_get_context()` query tool**: implemented with the spatial milestone and limited to sanitized pet/window capabilities.
 4. **TTS (`speak: true`)**: after bubble text is proven; field reserved in payload, always `false` in Phase B.
 
 ### Implemented since v1.1

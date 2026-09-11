@@ -1,8 +1,10 @@
 # Remote Pi Adapter — 复用设计拆解
 
-> 目标：让远端 Linux 的 interactive Pi session 通过现有 Clawd Secure Remote SSH transport 回到 Windows Clawd，再由 PetPresentationBridge 映射为本地独立桌宠。
+> **历史设计记录。** Remote Pi 状态链路已经实现；后续 remote `pet_express` 复用了同一 Secure Remote SSH ingress，见 [FINISHED.md](FINISHED.md) 和 [interaction contract draft](docs/drafts/phase-a-interaction-contract.md)。当前执行顺序以 [PLAN.md](PLAN.md) 为准。
 >
-> 范围：Remote Pi MVP（一个 Remote SSH profile / Unix account，多 top-level Pi session，state-only）。
+> 原目标：让远端 Linux 的 interactive Pi session 通过现有 Clawd Secure Remote SSH transport 回到 Windows Clawd，再由 PetPresentationBridge 映射为本地独立桌宠。
+>
+> 原范围：Remote Pi MVP（一个 Remote SSH profile / Unix account，多 top-level Pi session，state-only）。
 
 ## 结论：不新建 tunnel，不新建 nonce，不新建 session registry
 

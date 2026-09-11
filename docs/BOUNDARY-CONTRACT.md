@@ -1,7 +1,10 @@
 # Phase-1 boundary contract
 
-This document describes the implemented phase-1 extraction only. It is not a
-provider, daemon, network protocol, or reaction feature.
+This document describes the implemented phase-1 extraction only, not the
+repository's complete current feature set. Later interaction/expression work is
+recorded in [`FINISHED.md`](../FINISHED.md) and the interaction contract draft.
+The phase-1 runtime itself is not a provider, daemon, network protocol, or
+reaction feature.
 
 ## Ownership
 
