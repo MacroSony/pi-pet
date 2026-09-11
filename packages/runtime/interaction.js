@@ -28,6 +28,18 @@ const {
   settleUserMessage,
 } = require("./inbox");
 
+const {
+  DEFAULT_PEER_MESSAGE_TTL_MS,
+  MAX_PEER_INBOX_QUEUE_CAPACITY,
+  MAX_PEER_MESSAGE_TTL_MS,
+  MIN_PEER_MESSAGE_TTL_MS,
+  PEER_CLAIM_TIMEOUT_MS,
+  claimNextPeerMessage,
+  enqueuePeerMessage,
+  getPeerMessageReceipt,
+  settlePeerMessage,
+} = require("./peer-inbox");
+
 const DEFAULT_TTL_MS = 30000;
 const MIN_TTL_MS = 1000;
 const MAX_TTL_MS = 300000;
@@ -352,23 +364,32 @@ function expressExpression(options = {}) {
 
 module.exports = {
   CLAIM_TIMEOUT_MS,
+  DEFAULT_PEER_MESSAGE_TTL_MS,
   DEFAULT_TTL_MS,
   DEFAULT_USER_MESSAGE_TTL_MS,
   MAX_ENVELOPE_SIZE,
   MAX_INBOX_QUEUE_CAPACITY,
+  MAX_PEER_INBOX_QUEUE_CAPACITY,
+  MAX_PEER_MESSAGE_TTL_MS,
   MAX_TEXT_LENGTH,
   MAX_TTL_MS,
   MAX_USER_MESSAGE_TTL_MS,
+  MIN_PEER_MESSAGE_TTL_MS,
   MIN_TTL_MS,
   MIN_USER_MESSAGE_TTL_MS,
+  PEER_CLAIM_TIMEOUT_MS,
   VALID_EMOTIONS,
   atomicWriteJson,
+  claimNextPeerMessage,
   claimNextUserMessage,
   derivePetId,
+  enqueuePeerMessage,
   enqueueUserMessage,
   expressExpression,
+  getPeerMessageReceipt,
   getUserMessageReceipt,
   isSafePetId,
+  settlePeerMessage,
   settleUserMessage,
   validateExpression,
 };

@@ -175,6 +175,135 @@ export interface GetUserMessageReceiptOptions extends PetIdentityInput {
   fsApi?: unknown;
 }
 
+export type PeerMessageDeliverAs = "followUp";
+
+export type PeerMessageStatus = "queued" | "dispatched" | "failed" | "expired" | "rejected";
+
+export type SettlePeerMessageStatus = "dispatched" | "failed" | "expired";
+
+export interface PeerMessage {
+  schemaVersion: "1";
+  kind: "peer_message";
+  messageId: string;
+  dedupKey: string;
+  targetPetId: string;
+  sourcePetId: string;
+  sourceDisplayName: string;
+  sourceHost: string;
+  text: string;
+  deliverAs: "followUp";
+  threadId: string;
+  hopCount: number;
+  maxHops: number;
+  replyHandle?: string | null;
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface ClaimedPeerMessage {
+  schemaVersion: "1";
+  kind: "peer_message";
+  messageId: string;
+  dedupKey: string;
+  targetPetId: string;
+  sourcePetId: string;
+  sourceDisplayName: string;
+  sourceHost: string;
+  text: string;
+  deliverAs: "followUp";
+  threadId: string;
+  hopCount: number;
+  maxHops: number;
+  replyHandle?: string | null;
+  createdAtMs: number;
+  expiresAtMs: number;
+  claimToken: string;
+  claimedAtMs: number;
+  message?: PeerMessage;
+}
+
+export interface PeerMessagePayloadEcho {
+  text?: string;
+  deliverAs?: "followUp";
+  threadId?: string;
+  hopCount?: number;
+  maxHops?: number;
+  replyHandle?: string | null;
+}
+
+export interface PeerMessageReceipt {
+  schemaVersion: "1";
+  kind?: "peer_message";
+  messageId: string | null;
+  dedupKey: string | null;
+  targetPetId: string | null;
+  sourcePetId: string | null;
+  sourceDisplayName: string | null;
+  sourceHost: string | null;
+  status: PeerMessageStatus;
+  reason: string | null;
+  text?: string;
+  deliverAs?: "followUp";
+  threadId?: string;
+  hopCount?: number;
+  maxHops?: number;
+  replyHandle?: string | null;
+  createdAtMs?: number;
+  updatedAtMs?: number;
+  expiresAtMs?: number;
+  payloadEcho?: PeerMessagePayloadEcho;
+}
+
+export interface EnqueuePeerMessageOptions {
+  targetPetId: string;
+  sourcePetId: string;
+  sourceDisplayName: string;
+  sourceHost: string;
+  text: string;
+  deliverAs?: "followUp" | string;
+  messageId?: string;
+  dedupKey?: string;
+  threadId?: string;
+  hopCount?: number;
+  maxHops?: number;
+  replyHandle?: string | null;
+  ttlMs?: number;
+  createdAtMs?: number;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
+export interface ClaimNextPeerMessageOptions {
+  targetPetId: string;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
+export interface SettlePeerMessageOptions {
+  targetPetId: string;
+  messageId: string;
+  claimToken: string;
+  status: SettlePeerMessageStatus | string;
+  reason?: string | null;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
+export interface GetPeerMessageReceiptOptions {
+  sourcePetId: string;
+  messageId: string;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
 export declare function derivePetId(identity?: PetIdentityInput): string;
 export declare function validateExpression(payload?: { text?: string; emotion?: string }): ExpressionValidationResult;
 export declare function expressExpression(options?: ExpressExpressionOptions): InteractionReceipt;
@@ -185,6 +314,11 @@ export declare function enqueueUserMessage(options?: EnqueueUserMessageOptions):
 export declare function claimNextUserMessage(options?: ClaimNextUserMessageOptions): ClaimedUserMessage | null;
 export declare function settleUserMessage(options?: SettleUserMessageOptions): UserMessageReceipt;
 export declare function getUserMessageReceipt(options?: GetUserMessageReceiptOptions): UserMessageReceipt | null;
+
+export declare function enqueuePeerMessage(options?: EnqueuePeerMessageOptions): PeerMessageReceipt;
+export declare function claimNextPeerMessage(options?: ClaimNextPeerMessageOptions): ClaimedPeerMessage | null;
+export declare function settlePeerMessage(options?: SettlePeerMessageOptions): PeerMessageReceipt;
+export declare function getPeerMessageReceipt(options?: GetPeerMessageReceiptOptions): PeerMessageReceipt | null;
 
 export declare const VALID_EMOTIONS: readonly ExpressionEmotion[];
 export declare const DEFAULT_TTL_MS: 30000;
@@ -198,3 +332,9 @@ export declare const MIN_USER_MESSAGE_TTL_MS: 1000;
 export declare const MAX_USER_MESSAGE_TTL_MS: 300000;
 export declare const MAX_INBOX_QUEUE_CAPACITY: 32;
 export declare const CLAIM_TIMEOUT_MS: 60000;
+
+export declare const DEFAULT_PEER_MESSAGE_TTL_MS: 60000;
+export declare const MIN_PEER_MESSAGE_TTL_MS: 1000;
+export declare const MAX_PEER_MESSAGE_TTL_MS: 300000;
+export declare const MAX_PEER_INBOX_QUEUE_CAPACITY: 16;
+export declare const PEER_CLAIM_TIMEOUT_MS: 60000;
