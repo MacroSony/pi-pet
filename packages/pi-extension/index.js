@@ -36,6 +36,13 @@ const MAX_RESPONSE_SIZE = 65536; // 64 KiB
 const HTTP_TIMEOUT_MS = 2500;
 const MAX_TEXT_LENGTH = 2000;
 
+const CLAWD_SERVER_ID = "clawd-on-desk";
+const CLAWD_SERVER_HEADER = "x-clawd-server";
+const PEER_CAPABILITY_SLOT_SYMBOL = Symbol.for("pi-pet.peer-capability.v1");
+const PEER_ALLOWED_PATHS = new Set(["/pet-peer/catalog", "/pet-peer/send"]);
+const PEER_LOCAL_TIMEOUT_MS = 2500;
+const PEER_REMOTE_TIMEOUT_MS = 5000;
+
 const DEFAULT_POLL_INTERVAL_MS = 500;
 const DEFAULT_DRAIN_INTERVAL_MS = 0;
 
@@ -127,6 +134,323 @@ function loadRemoteConfig(env) {
   }
 }
 
+function resolveLocalRuntimeConfigPath(env) {
+  const source = env || process.env;
+  if (typeof source.PI_PET_CLAWD_RUNTIME_CONFIG === "string" && source.PI_PET_CLAWD_RUNTIME_CONFIG.trim()) {
+    const customPath = source.PI_PET_CLAWD_RUNTIME_CONFIG.trim();
+    return path.isAbsolute(customPath) ? customPath : null;
+  }
+  const home = (source && (source.HOME || source.USERPROFILE)) || os.homedir();
+  return path.join(home, ".clawd", "runtime.json");
+}
+
+function loadLocalRuntimeConfig(env) {
+  const configPath = resolveLocalRuntimeConfigPath(env);
+  if (!configPath) return null;
+  try {
+    const raw = fs.readFileSync(configPath, "utf8");
+    const parsed = JSON.parse(raw);
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+
+    const { app, port, ownerPid } = parsed;
+
+    if (app !== CLAWD_SERVER_ID) {
+      return null;
+    }
+    if (!Number.isInteger(port) || port < 23333 || port > 23337) {
+      return null;
+    }
+    if (typeof ownerPid !== "number" || !Number.isSafeInteger(ownerPid) || ownerPid <= 0) {
+      return null;
+    }
+
+    return {
+      mode: "local",
+      port,
+      ownerPid,
+    };
+  } catch {
+    return null;
+  }
+}
+
+function resolvePeerTransportConfig(env) {
+  const remote = loadRemoteConfig(env);
+  if (remote) {
+    return {
+      mode: "remote",
+      port: remote.remotePort,
+      routingNonce: remote.routingNonce,
+      profileId: remote.profileId,
+    };
+  }
+  const local = loadLocalRuntimeConfig(env);
+  if (local) {
+    return local;
+  }
+  return null;
+}
+
+function readPeerCapabilityToken() {
+  const slot = globalThis[PEER_CAPABILITY_SLOT_SYMBOL];
+  if (!slot || typeof slot !== "object" || Array.isArray(slot)) {
+    return null;
+  }
+  if (slot.version !== 1) {
+    return null;
+  }
+  if (typeof slot.token !== "string" || !/^[0-9a-f]{64}$/.test(slot.token)) {
+    return null;
+  }
+  return slot.token;
+}
+
+function countCodePoints(str) {
+  if (typeof str !== "string") return 0;
+  return Array.from(str).length;
+}
+
+const PUBLIC_CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u061C\u200E-\u200F\u202A-\u202E\u2066-\u2069]+/g;
+
+function sanitizePublicText(value, maxCodePoints) {
+  if (typeof value !== "string") return null;
+  const normalized = value.replace(PUBLIC_CONTROL_RE, " ").replace(/\s+/g, " ").trim();
+  if (!normalized) return null;
+  const characters = Array.from(normalized);
+  return characters.slice(0, maxCodePoints).join("");
+}
+
+function projectCatalogSession(entry) {
+  if (!entry || typeof entry !== "object" || Array.isArray(entry)) return null;
+  const { handle, capabilities, canMessage, expiresAtMs } = entry;
+  const displayName = sanitizePublicText(entry.displayName, 120);
+  const host = sanitizePublicText(entry.host, 120);
+  const state = sanitizePublicText(entry.state, 64);
+
+  if (typeof handle !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(handle)) return null;
+  if (!displayName || !host || !state) return null;
+  if (
+    !Array.isArray(capabilities)
+    || capabilities.length !== 1
+    || capabilities[0] !== "receive_peer_message"
+  ) return null;
+  if (canMessage !== true) return null;
+  if (!Number.isSafeInteger(expiresAtMs) || expiresAtMs < 0) return null;
+
+  return {
+    handle,
+    displayName,
+    host,
+    state,
+    capabilities: ["receive_peer_message"],
+    canMessage: true,
+    expiresAtMs,
+  };
+}
+
+function sanitizeSendDetails(data, defaultReason = null) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return {
+      status: "failed",
+      reason: defaultReason || "Unknown error",
+    };
+  }
+
+  const details = {};
+
+  details.schemaVersion = "1";
+
+  const validStatuses = new Set(["queued", "dispatched", "failed", "expired", "rejected"]);
+  details.status = validStatuses.has(data.status) ? data.status : "failed";
+
+  if (typeof data.messageId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(data.messageId)) {
+    details.messageId = data.messageId;
+  }
+
+  if (typeof data.threadId === "string" && /^[A-Za-z0-9_-]{1,64}$/.test(data.threadId)) {
+    details.threadId = data.threadId;
+  }
+
+  if (Number.isSafeInteger(data.hopCount) && data.hopCount >= 0 && data.hopCount <= 1) {
+    details.hopCount = data.hopCount;
+  }
+
+  if (Number.isSafeInteger(data.maxHops) && data.maxHops >= 0 && data.maxHops <= 1) {
+    details.maxHops = data.maxHops;
+  }
+
+  if (Number.isSafeInteger(data.createdAtMs) && data.createdAtMs > 0) {
+    details.createdAtMs = data.createdAtMs;
+  }
+
+  if (Number.isSafeInteger(data.expiresAtMs) && data.expiresAtMs > 0) {
+    details.expiresAtMs = data.expiresAtMs;
+  }
+
+  const safeReason = sanitizePublicText(data.reason, 1024);
+  const safeDefaultReason = sanitizePublicText(defaultReason, 1024);
+  if (safeReason) {
+    details.reason = safeReason;
+  } else if (safeDefaultReason) {
+    details.reason = safeDefaultReason;
+  }
+
+  return details;
+}
+
+function postPeerJson(config, pathName, body, signal) {
+  return new Promise((resolve) => {
+    if (!config || typeof config !== "object" || !Number.isInteger(config.port) || config.port < 1 || config.port > 65535) {
+      resolve({ ok: false, status: 0, reason: "Clawd runtime configuration unavailable" });
+      return;
+    }
+
+    if (!PEER_ALLOWED_PATHS.has(pathName)) {
+      resolve({ ok: false, status: 0, reason: "Invalid request path" });
+      return;
+    }
+
+    if (signal && signal.aborted) {
+      resolve({ ok: false, status: 0, reason: "Request aborted" });
+      return;
+    }
+
+    let bodyJson;
+    try {
+      bodyJson = JSON.stringify(body);
+    } catch {
+      resolve({ ok: false, status: 0, reason: "Failed to serialize request payload to JSON" });
+      return;
+    }
+
+    const bodyBytes = Buffer.byteLength(bodyJson, "utf8");
+    if (bodyBytes > MAX_ENVELOPE_SIZE) {
+      resolve({ ok: false, status: 0, reason: "Request payload exceeds 16 KiB limit" });
+      return;
+    }
+
+    const isRemote = config.mode === "remote" || Boolean(config.routingNonce);
+    const timeoutMs = isRemote ? PEER_REMOTE_TIMEOUT_MS : PEER_LOCAL_TIMEOUT_MS;
+
+    const headers = {
+      "Content-Type": "application/json",
+      "Content-Length": bodyBytes,
+      Connection: "close",
+    };
+
+    if (isRemote && typeof config.routingNonce === "string") {
+      headers[ROUTING_NONCE_HEADER] = config.routingNonce;
+    }
+
+    let settled = false;
+    const finish = (result) => {
+      if (settled) return;
+      settled = true;
+      resolve(result);
+    };
+
+    const reqOptions = {
+      hostname: "127.0.0.1",
+      port: config.port,
+      path: pathName,
+      method: "POST",
+      headers,
+      timeout: timeoutMs,
+    };
+
+    if (signal) {
+      reqOptions.signal = signal;
+    }
+
+    let req;
+    try {
+      req = http.request(reqOptions, (res) => {
+        const serverHeader = res.headers && (
+          res.headers[CLAWD_SERVER_HEADER] ||
+          res.headers[CLAWD_SERVER_HEADER.toLowerCase()]
+        );
+        const headerVal = Array.isArray(serverHeader) ? serverHeader[0] : serverHeader;
+        if (headerVal !== CLAWD_SERVER_ID) {
+          try { req.destroy(); } catch {}
+          try { res.destroy(); } catch {}
+          finish({ ok: false, status: res.statusCode || 0, reason: "Invalid server header" });
+          return;
+        }
+
+        let receivedBytes = 0;
+        const chunks = [];
+        let tooLarge = false;
+
+        res.on("data", (chunk) => {
+          if (tooLarge) return;
+          const buf = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+          receivedBytes += buf.length;
+          if (receivedBytes > MAX_RESPONSE_SIZE) {
+            tooLarge = true;
+            chunks.length = 0;
+            finish({ ok: false, status: res.statusCode || 0, reason: "Response exceeded maximum size limit of 64 KiB" });
+            try { req.destroy(); } catch {}
+            try { res.destroy(); } catch {}
+            return;
+          }
+          chunks.push(buf);
+        });
+
+        res.on("end", () => {
+          if (tooLarge || settled) return;
+          const raw = Buffer.concat(chunks).toString("utf8");
+          let data = null;
+          if (raw) {
+            try {
+              data = JSON.parse(raw);
+            } catch {
+              finish({
+                ok: false,
+                status: res.statusCode || 0,
+                reason: `Non-JSON response from server (HTTP ${res.statusCode})`,
+              });
+              return;
+            }
+          }
+          const ok = Boolean(res.statusCode && res.statusCode >= 200 && res.statusCode < 300);
+          finish({ ok, status: res.statusCode || 0, data });
+        });
+
+        res.on("aborted", () => {
+          finish({ ok: false, status: 0, reason: "Response aborted" });
+        });
+
+        res.on("error", (err) => {
+          finish({ ok: false, status: 0, reason: (err && err.message) || "Response error" });
+        });
+      });
+    } catch (err) {
+      finish({ ok: false, status: 0, reason: (err && err.message) || "Failed to initiate request" });
+      return;
+    }
+
+    req.on("timeout", () => {
+      try { req.destroy(); } catch {}
+      finish({ ok: false, status: 0, reason: `Request timed out after ${timeoutMs}ms` });
+    });
+
+    req.on("error", (err) => {
+      if (signal && signal.aborted) {
+        finish({ ok: false, status: 0, reason: "Request aborted" });
+      } else {
+        finish({ ok: false, status: 0, reason: (err && err.message) || "Transport error" });
+      }
+    });
+
+    try {
+      req.write(bodyJson);
+      req.end();
+    } catch (err) {
+      finish({ ok: false, status: 0, reason: (err && err.message) || "Request write error" });
+    }
+  });
+}
+
 function canonicalizePiSessionId(val) {
   if (typeof val !== "string") return null;
   const trimmed = val.trim();
@@ -206,6 +530,20 @@ function resolveSessionId(event, ctx, pi) {
   }
 
   return null;
+}
+
+function getCanonicalSessionId(ctx, pi) {
+  let resolved = resolveSessionId(undefined, ctx, pi);
+  if (!resolved) {
+    const fromRead = readSessionId(ctx);
+    if (fromRead && fromRead !== "default") {
+      resolved = canonicalizePiSessionId(fromRead);
+    }
+  }
+  if (!resolved || resolved === "default" || resolved === "pi:default" || resolved === "pi:") {
+    return null;
+  }
+  return resolved;
 }
 
 function extractMessageText(claimed) {
@@ -370,6 +708,14 @@ function formatResult(receipt) {
     content: [{ type: "text", text: JSON.stringify(receipt) }],
     details: receipt,
     isError: receipt.status !== "delivered",
+  };
+}
+
+function formatPeerResult(details, isError) {
+  return {
+    content: [{ type: "text", text: JSON.stringify(details) }],
+    details,
+    isError: Boolean(isError),
   };
 }
 
@@ -695,6 +1041,182 @@ function piPetExtension(pi, dependencies = {}) {
 
   if (pi && typeof pi.registerTool === "function") {
     pi.registerTool({
+      name: "pet_list_sessions",
+      label: "List Pet Sessions",
+      description:
+        "List active desktop pet sessions available for peer messaging. Returns sanitized session handles, display names, states and hosts.",
+      promptSnippet:
+        "pet_list_sessions(state?, host?) — list active peer-messageable pet sessions",
+      promptGuidelines: [
+        "Returns active, interactive Pi sessions advertising peer messaging capability, excluding self.",
+        "Use the returned handle (psh_...) with pet_send to send a peer note.",
+      ],
+      parameters: Type.Object({
+        state: Type.Optional(Type.String({ maxLength: 120 })),
+        host: Type.Optional(Type.String({ maxLength: 120 })),
+      }),
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+        }
+
+        if (params && typeof params === "object") {
+          for (const key of Object.keys(params)) {
+            if (key !== "state" && key !== "host") {
+              return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            }
+          }
+          if (params.state !== undefined) {
+            if (typeof params.state !== "string" || countCodePoints(params.state) > 120) {
+              return formatPeerResult({ status: "rejected", reason: "state must be a string <= 120 characters" }, true);
+            }
+          }
+          if (params.host !== undefined) {
+            if (typeof params.host !== "string" || countCodePoints(params.host) > 120) {
+              return formatPeerResult({ status: "rejected", reason: "host must be a string <= 120 characters" }, true);
+            }
+          }
+        }
+
+        const rawSessionId = getCanonicalSessionId(ctx, pi);
+        if (!rawSessionId) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+        }
+
+        const capabilityToken = readPeerCapabilityToken();
+        if (!capabilityToken) {
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+        }
+
+        const config = resolvePeerTransportConfig();
+        if (!config) {
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+        }
+
+        const body = {
+          schemaVersion: "1",
+          kind: "peer_catalog_query",
+          rawSessionId,
+          capabilityToken,
+        };
+        if (params && typeof params.state === "string" && params.state.trim().length > 0) {
+          body.state = params.state.trim();
+        }
+        if (params && typeof params.host === "string" && params.host.trim().length > 0) {
+          body.host = params.host.trim();
+        }
+
+        const res = await postPeerJson(config, "/pet-peer/catalog", body, signal);
+
+        if (!res.ok || res.status !== 200) {
+          const errorDetails = sanitizeSendDetails(res.data, res.reason || `HTTP ${res.status}`);
+          return formatPeerResult(errorDetails, true);
+        }
+
+        const data = res.data;
+        if (!data || typeof data !== "object" || Array.isArray(data) || data.kind !== "peer_catalog" || !Array.isArray(data.sessions)) {
+          return formatPeerResult({ status: "failed", reason: "Invalid catalog response structure" }, true);
+        }
+
+        const projectedSessions = [];
+        for (const sessionEntry of data.sessions) {
+          const projected = projectCatalogSession(sessionEntry);
+          if (projected) {
+            projectedSessions.push(projected);
+          }
+        }
+
+        const details = {
+          schemaVersion: "1",
+          kind: "peer_catalog",
+          sessions: projectedSessions,
+        };
+
+        return formatPeerResult(details, false);
+      },
+    });
+
+    pi.registerTool({
+      name: "pet_send",
+      label: "Send Peer Note",
+      description:
+        "Send a one-shot peer note to another active desktop pet session using a valid catalog or reply handle.",
+      promptSnippet:
+        "pet_send(target, text) — send a one-shot peer note to another active pet session",
+      promptGuidelines: [
+        "target must be a valid session handle (e.g. psh_...) from pet_list_sessions or an incoming peer note.",
+        "text must be between 1 and 2000 Unicode code points.",
+        "Peer messaging is normal priority and cannot force an immediate turn or autonomous reply.",
+      ],
+      parameters: Type.Object({
+        target: Type.String({ minLength: 1, maxLength: 128 }),
+        text: Type.String({ minLength: 1, maxLength: 2000 }),
+      }),
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (!params || typeof params !== "object" || Array.isArray(params)) {
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+        }
+
+        for (const key of Object.keys(params)) {
+          if (key !== "target" && key !== "text") {
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+          }
+        }
+
+        const { target, text } = params;
+
+        if (typeof target !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(target)) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true);
+        }
+
+        if (typeof text !== "string") {
+          return formatPeerResult({ status: "rejected", reason: "text must be a string" }, true);
+        }
+
+        const cpLen = countCodePoints(text);
+        if (cpLen < 1 || cpLen > 2000) {
+          return formatPeerResult({ status: "rejected", reason: "text length must be between 1 and 2000 Unicode code points" }, true);
+        }
+
+        const rawSessionId = getCanonicalSessionId(ctx, pi);
+        if (!rawSessionId) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+        }
+
+        const capabilityToken = readPeerCapabilityToken();
+        if (!capabilityToken) {
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+        }
+
+        const config = resolvePeerTransportConfig();
+        if (!config) {
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+        }
+
+        const body = {
+          schemaVersion: "1",
+          kind: "peer_send",
+          rawSessionId,
+          capabilityToken,
+          target,
+          text,
+        };
+
+        const res = await postPeerJson(config, "/pet-peer/send", body, signal);
+
+        const isSuccessHttp = res.status === 200 || res.status === 202;
+        const data = res.data;
+        const fallbackReason = res.ok ? null : (res.reason || `HTTP ${res.status}`);
+        const sanitized = sanitizeSendDetails(data, fallbackReason);
+
+        const isSuccessStatus = sanitized.status === "queued" || sanitized.status === "dispatched";
+        const isError = !(isSuccessHttp && isSuccessStatus);
+
+        return formatPeerResult(sanitized, isError);
+      },
+    });
+
+    pi.registerTool({
       name: "pet_express",
       label: "Pet Express",
       description:
@@ -809,8 +1331,18 @@ module.exports.ROUTING_NONCE_HEADER = ROUTING_NONCE_HEADER;
 module.exports.ROUTING_NONCE_RE = ROUTING_NONCE_RE;
 module.exports.DEFAULT_POLL_INTERVAL_MS = DEFAULT_POLL_INTERVAL_MS;
 module.exports.DEFAULT_DRAIN_INTERVAL_MS = DEFAULT_DRAIN_INTERVAL_MS;
+module.exports.CLAWD_SERVER_ID = CLAWD_SERVER_ID;
+module.exports.CLAWD_SERVER_HEADER = CLAWD_SERVER_HEADER;
+module.exports.PEER_CAPABILITY_SLOT_SYMBOL = PEER_CAPABILITY_SLOT_SYMBOL;
 module.exports.loadInteraction = loadInteraction;
 module.exports.loadRemoteConfig = loadRemoteConfig;
+module.exports.resolveLocalRuntimeConfigPath = resolveLocalRuntimeConfigPath;
+module.exports.loadLocalRuntimeConfig = loadLocalRuntimeConfig;
+module.exports.resolvePeerTransportConfig = resolvePeerTransportConfig;
+module.exports.postPeerJson = postPeerJson;
+module.exports.countCodePoints = countCodePoints;
+module.exports.projectCatalogSession = projectCatalogSession;
+module.exports.sanitizeSendDetails = sanitizeSendDetails;
 module.exports.validateExpression = validateExpression;
 module.exports.isIdentityOrSessionRejection = isIdentityOrSessionRejection;
 module.exports.postRemoteExpression = postRemoteExpression;
@@ -819,6 +1351,7 @@ module.exports.toolCallDedupKey = toolCallDedupKey;
 module.exports.canonicalizePiSessionId = canonicalizePiSessionId;
 module.exports.readSessionId = readSessionId;
 module.exports.resolveSessionId = resolveSessionId;
+module.exports.getCanonicalSessionId = getCanonicalSessionId;
 module.exports.extractMessageText = extractMessageText;
 module.exports.createInboxConsumer = createInboxConsumer;
 module.exports.attachInboxConsumer = attachInboxConsumer;
