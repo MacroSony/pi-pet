@@ -2,6 +2,74 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-09 — Local Pi own-session inbox vertical slice
+
+### Runtime inbox architecture and contracts
+
+- Added neutral inbox APIs to the runtime (`packages/runtime/inbox.js`, `packages/runtime/internal.js`, `packages/runtime/interaction.js`):
+  - `enqueueUserMessage(options)`: ingests user input directed at a specific target session's pet identity.
+  - `claimNextUserMessage(options)`: atomically leases the oldest pending message for a target pet.
+  - `settleUserMessage(options)`: finalizes message status upon dispatch or failure with claim token validation.
+- Per-pet inbox directory layout under data directory (`~/.pi-pet/`):
+  - `inbox/<petId>/pending/<timestamp>-<commandId>.json`: pending messages ordered by millisecond timestamp, with command ID as the deterministic tie-breaker.
+  - `inbox/<petId>/claimed/<commandId>.json`: active claims holding message payload and claim lease metadata.
+  - `receipts/rcpt-user-<commandId>.json`: durable user-message receipts with 24-hour GC window.
+- Strict wire schema, limits and validation:
+  - Envelope payload limit <= 16 KiB; message text strictly between 1 and 2,000 characters.
+  - Delivery mode fixed to `deliverAs: "followUp"`.
+  - Configurable TTL (1s to 300s, default 60s); capacity capped at 32 items per pet inbox (rejects newest incoming messages when full).
+  - Deduplication by `commandId` and `(petId, dedupKey)` against persisted `rcpt-user-*` receipts.
+  - Active session verification: rejects messages targeting unknown, closed, or offline sessions by inspecting `status-<petId>.json`.
+- Reliable claim lifecycle and crash safety:
+  - Atomic rename directly moves messages from `pending` to `claimed/<commandId>.json`.
+  - Re-checks message expiration at claim time and marks expired messages with an `expired` receipt.
+  - Stale claim recovery (>60s) writes terminal `failed` receipt (delivery-unknown) and deletes the stale claim; stale messages are NEVER silently requeued to prevent duplicate agent execution.
+  - Terminal statuses are strictly `dispatched`, `failed`, `expired`, or `rejected`; never reports `delivered` at the dispatch boundary, preserving truthful distinction between runtime dispatch and renderer playback.
+
+### Pi extension inbox consumer
+
+- Added inbox consumer loop to `packages/pi-extension/index.js` (`createInboxConsumer`, `attachInboxConsumer`):
+  - Automatically starts on `session_start` and terminates on `session_shutdown` lifecycle events.
+  - Multi-candidate session ID resolution matching active Pi runtime session handles.
+  - Polling loop with immediate drain on pending messages and configurable idle polling intervals (default 500ms).
+  - Re-evaluates expiration timestamp immediately prior to Pi host dispatch.
+  - Invokes `pi.sendUserMessage(text, { deliverAs: "followUp", expandPromptTemplates: false })`.
+  - Settles receipt status as `dispatched` after a non-throwing `sendUserMessage` invocation, `failed` on a synchronous invocation error or malformed claim, and `expired` when TTL elapses before dispatch.
+  - All errors and unhandled exceptions in the polling/dispatch loop are caught to prevent crashing the host Pi process.
+
+### Verification and status
+
+- Root runtime/Pi-extension suites: **111/111 passed**.
+- Clawd focused inbox/expression/remote-ingress suites: **40/40 passed**.
+- Renderer Rust tests: **74/74 passed**; renderer JavaScript tests: **34/34 passed**; JavaScript syntax checks passed.
+- Root and both nested repositories passed `git diff --check`.
+- Scope limitations and remaining verification:
+  - This vertical slice implements and verifies local Pi own-session inbox delivery only.
+  - Clawd Remote SSH ingress transport for remote Pi inboxes, capability token handshake, and reconnect-visible terminal receipts remain in progress for Milestone 1 release hardening.
+  - Manual GUI smoke testing and real live Pi process verification remain to be completed.
+
+## 2026-09-09 — Phase A/B interaction and Pi expression delivery
+
+### Runtime and Pi extension
+
+- Added the neutral interaction runtime with validated expression envelopes, canonical pet identity, TTL, deduplication, atomic event/receipt writes and 24-hour receipt GC.
+- Added the Pi `pet_express(text?, emotion?)` tool. The adapter binds its own session identity; the Agent cannot select a raw session or pet ID.
+- Local Pi sessions write directly through the neutral runtime. Remote Pi sessions fall back only after a local identity/session rejection and reuse Clawd's existing Secure Remote SSH transport.
+- Remote expression requests use the existing profile-bound routing nonce and ingress identity stamping; no new public port, tunnel, provider or daemon was introduced.
+
+### Renderer and Clawd integration
+
+- The renderer watches runtime-owned `event-<petId>.json` files, validates expiry/schema, deduplicates event IDs and preserves text when an optional reaction asset is missing.
+- Clawd gained a bounded `/pet-expression` ingress route with nonce gating for remote profiles, strict shape/size validation and delivery receipts.
+- A real loopback exercised extension → ingress → runtime → event/receipt, including bad-nonce rejection and local/remote directory isolation.
+
+### Verification
+
+- Root interaction/extension suites: **50/50 passed** at review time.
+- Clawd focused expression/ingress suites: **31/31 passed**.
+- Renderer JavaScript tests: **19/19 passed**; Rust tests: **54/54 passed**.
+- Remaining manual evidence: real SSH-tunnel delivery and a real Windows Tauri bubble smoke were not replaced by loopback/unit coverage.
+
 ## 2026-09-09 — Root boundary extraction and public source release
 
 ### Architecture

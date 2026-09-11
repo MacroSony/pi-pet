@@ -5,18 +5,34 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 
+const {
+  GC_WINDOW_MS,
+  MAX_ENVELOPE_SIZE,
+  MAX_ID_LENGTH,
+  MAX_TEXT_LENGTH,
+  atomicWriteJson,
+  derivePetId,
+  isSafePetId,
+  resolvePetIdentity,
+} = require("./internal");
+
+const {
+  CLAIM_TIMEOUT_MS,
+  DEFAULT_USER_MESSAGE_TTL_MS,
+  MAX_INBOX_QUEUE_CAPACITY,
+  MAX_USER_MESSAGE_TTL_MS,
+  MIN_USER_MESSAGE_TTL_MS,
+  claimNextUserMessage,
+  enqueueUserMessage,
+  settleUserMessage,
+} = require("./inbox");
+
 const DEFAULT_TTL_MS = 30000;
 const MIN_TTL_MS = 1000;
 const MAX_TTL_MS = 300000;
-const MAX_ENVELOPE_SIZE = 16384; // 16 KiB
-const MAX_TEXT_LENGTH = 2000;
-const MAX_ID_LENGTH = 64;
-const GC_WINDOW_MS = 24 * 60 * 60 * 1000; // 24 hours
 
 const VALID_EMOTIONS = Object.freeze(["happy", "shy", "shocked", "sad", "celebrate"]);
 const VALID_EMOTIONS_SET = new Set(VALID_EMOTIONS);
-
-const { derivePetId, isSafePetId } = require("./identity");
 
 function validateExpression(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -50,25 +66,11 @@ function validateExpression(payload) {
   return { ok: true };
 }
 
-function atomicWriteJson(targetPath, data, fsApi = fs) {
-  const dir = path.dirname(targetPath);
-  fsApi.mkdirSync(dir, { recursive: true });
-  const content = `${JSON.stringify(data, null, 2)}\n`;
-  const temporaryPath = `${targetPath}.${process.pid}.${crypto.randomUUID()}.tmp`;
-  fsApi.writeFileSync(temporaryPath, content, "utf8");
-  try {
-    fsApi.renameSync(temporaryPath, targetPath);
-  } catch {
-    fsApi.writeFileSync(targetPath, content, "utf8");
-    try { fsApi.unlinkSync(temporaryPath); } catch {}
-  }
-}
-
 function expressExpression(options = {}) {
-  const fsApi = options.fsApi || fs;
-  const env = options.env || process.env;
-  const nowMs = typeof options.now === "function" ? options.now() : Date.now();
-  const createdAtMs = typeof options.createdAtMs === "number" ? options.createdAtMs : nowMs;
+  const fsApi = options?.fsApi || fs;
+  const env = options?.env || process.env;
+  const nowMs = typeof options?.now === "function" ? options.now() : Date.now();
+  const createdAtMs = typeof options?.createdAtMs === "number" ? options.createdAtMs : nowMs;
 
   if (!options || typeof options !== "object" || Array.isArray(options)) {
     return {
@@ -171,52 +173,20 @@ function expressExpression(options = {}) {
   }
 
   // 5. Derive or validate petId
-  let petId;
-  if (options.petId) {
-    petId = options.petId;
-  } else if (options.rawSessionId || options.id || options.agentId || options.profileId) {
-    if (!options.rawSessionId && !options.id) {
-      return {
-        schemaVersion: "1",
-        commandId: options.commandId || null,
-        dedupKey: options.dedupKey || null,
-        petId: null,
-        status: "rejected",
-        reason: "InvalidPetIdentity: rawSessionId is required to derive petId",
-        createdAtMs,
-        updatedAtMs: nowMs,
-      };
-    }
-    petId = derivePetId({
-      profileId: options.profileId,
-      agentId: options.agentId,
-      rawSessionId: options.rawSessionId || options.id,
-    });
-  } else {
+  const idResult = resolvePetIdentity(options);
+  if (!idResult.ok) {
     return {
       schemaVersion: "1",
       commandId: options.commandId || null,
       dedupKey: options.dedupKey || null,
-      petId: null,
+      petId: idResult.petId,
       status: "rejected",
-      reason: "InvalidPetIdentity: session identity is required",
+      reason: idResult.reason,
       createdAtMs,
       updatedAtMs: nowMs,
     };
   }
-
-  if (!isSafePetId(petId)) {
-    return {
-      schemaVersion: "1",
-      commandId: options.commandId || null,
-      dedupKey: options.dedupKey || null,
-      petId: String(petId).slice(0, MAX_ID_LENGTH),
-      status: "rejected",
-      reason: "InvalidPetIdentity: malformed petId or path traversal detected",
-      createdAtMs,
-      updatedAtMs: nowMs,
-    };
-  }
+  const petId = idResult.petId;
 
   // 6. Resolve data directory
   const home = env.HOME || env.USERPROFILE || os.homedir();
@@ -294,10 +264,12 @@ function expressExpression(options = {}) {
     const entries = fsApi.readdirSync(receiptsDir);
     for (const file of entries) {
       if (!file.startsWith("rcpt-") || !file.endsWith(".json")) continue;
+      if (file.startsWith("rcpt-user-")) continue; // Avoid matching user receipts
       const filePath = path.join(receiptsDir, file);
       try {
         const content = fsApi.readFileSync(filePath, "utf8");
         const rcpt = JSON.parse(content);
+        if (rcpt.kind === "user_message") continue;
 
         const rcptTime = rcpt.createdAtMs || rcpt.updatedAtMs || 0;
         if (rcptTime > 0 && nowMs - rcptTime > GC_WINDOW_MS) {
@@ -378,14 +350,23 @@ function expressExpression(options = {}) {
 }
 
 module.exports = {
+  CLAIM_TIMEOUT_MS,
   DEFAULT_TTL_MS,
+  DEFAULT_USER_MESSAGE_TTL_MS,
   MAX_ENVELOPE_SIZE,
+  MAX_INBOX_QUEUE_CAPACITY,
   MAX_TEXT_LENGTH,
   MAX_TTL_MS,
+  MAX_USER_MESSAGE_TTL_MS,
   MIN_TTL_MS,
+  MIN_USER_MESSAGE_TTL_MS,
   VALID_EMOTIONS,
+  atomicWriteJson,
+  claimNextUserMessage,
   derivePetId,
+  enqueueUserMessage,
   expressExpression,
   isSafePetId,
+  settleUserMessage,
   validateExpression,
 };

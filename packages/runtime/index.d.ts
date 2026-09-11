@@ -78,13 +78,113 @@ export interface ExpressExpressionOptions extends PetIdentityInput {
   fsApi?: unknown;
 }
 
+export type UserMessageDeliverAs = "followUp";
+
+export type UserMessageStatus = "queued" | "dispatched" | "failed" | "expired" | "rejected";
+
+export type SettleUserMessageStatus = "dispatched" | "failed" | "expired";
+
+export interface UserMessage {
+  schemaVersion: "1";
+  kind: "user_message";
+  commandId: string;
+  dedupKey: string;
+  petId: string;
+  text: string;
+  deliverAs: "followUp";
+  createdAtMs: number;
+  expiresAtMs: number;
+}
+
+export interface ClaimedUserMessage {
+  schemaVersion: "1";
+  kind: "user_message";
+  commandId: string;
+  dedupKey: string;
+  petId: string;
+  text: string;
+  deliverAs: "followUp";
+  createdAtMs: number;
+  expiresAtMs: number;
+  claimToken: string;
+  claimedAtMs: number;
+  message?: UserMessage;
+}
+
+export interface UserMessagePayloadEcho {
+  text?: string;
+  deliverAs?: "followUp";
+}
+
+export interface UserMessageReceipt {
+  schemaVersion: "1";
+  kind?: "user_message";
+  commandId: string | null;
+  dedupKey: string | null;
+  petId: string | null;
+  status: UserMessageStatus;
+  reason: string | null;
+  text?: string;
+  deliverAs?: "followUp";
+  createdAtMs?: number;
+  updatedAtMs?: number;
+  expiresAtMs?: number;
+  payloadEcho?: UserMessagePayloadEcho;
+}
+
+export interface EnqueueUserMessageOptions extends PetIdentityInput {
+  petId?: string;
+  text?: string;
+  deliverAs?: "followUp" | string;
+  dedupKey?: string;
+  commandId?: string;
+  ttlMs?: number;
+  createdAtMs?: number;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
+export interface ClaimNextUserMessageOptions extends PetIdentityInput {
+  petId?: string;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
+export interface SettleUserMessageOptions extends PetIdentityInput {
+  petId?: string;
+  commandId: string;
+  claimToken: string;
+  status: SettleUserMessageStatus | string;
+  reason?: string;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  now?: () => number;
+  fsApi?: unknown;
+}
+
 export declare function derivePetId(identity?: PetIdentityInput): string;
 export declare function validateExpression(payload?: { text?: string; emotion?: string }): ExpressionValidationResult;
 export declare function expressExpression(options?: ExpressExpressionOptions): InteractionReceipt;
 export declare function isSafePetId(petId: string): boolean;
+export declare function atomicWriteJson(targetPath: string, data: unknown, fsApi?: unknown): void;
+
+export declare function enqueueUserMessage(options?: EnqueueUserMessageOptions): UserMessageReceipt;
+export declare function claimNextUserMessage(options?: ClaimNextUserMessageOptions): ClaimedUserMessage | null;
+export declare function settleUserMessage(options?: SettleUserMessageOptions): UserMessageReceipt;
+
 export declare const VALID_EMOTIONS: readonly ExpressionEmotion[];
 export declare const DEFAULT_TTL_MS: 30000;
 export declare const MIN_TTL_MS: 1000;
 export declare const MAX_TTL_MS: 300000;
 export declare const MAX_ENVELOPE_SIZE: 16384;
 export declare const MAX_TEXT_LENGTH: 2000;
+
+export declare const DEFAULT_USER_MESSAGE_TTL_MS: 60000;
+export declare const MIN_USER_MESSAGE_TTL_MS: 1000;
+export declare const MAX_USER_MESSAGE_TTL_MS: 300000;
+export declare const MAX_INBOX_QUEUE_CAPACITY: 32;
+export declare const CLAIM_TIMEOUT_MS: 60000;

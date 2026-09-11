@@ -1,8 +1,10 @@
-# pi-pet Pi extension (Phase B)
+# pi-pet Pi extension (Phase B & Inbox v1)
 
-Registers the `pet_express(text?, emotion?)` tool so a Pi agent can express through its
-desktop pet: text bubble and/or emotion animation. Contract:
-[`docs/drafts/phase-a-interaction-contract.md`](../../docs/drafts/phase-a-interaction-contract.md).
+Registers the `pet_express(text?, emotion?)` tool for agent-to-pet expressions and attaches the local inbox consumer for desktop-to-agent user instructions.
+
+Contracts:
+- Agent Expressions: [`docs/drafts/phase-a-interaction-contract.md`](../../docs/drafts/phase-a-interaction-contract.md)
+- User Inbox v1: [`docs/PI-INBOX-CONTRACT.md`](../../docs/PI-INBOX-CONTRACT.md)
 
 The agent never supplies petId/commandId/TTL/timestamps — this extension attaches them
 from its own session context (`ctx.sessionManager.getSessionId()`), and the neutral
@@ -97,3 +99,34 @@ Expressions are POSTed over HTTP via `node:http`:
 3. **No Double Delivery**: Any other local outcome (`delivered`, `SchemaValidationError`, `expired`, or `IO failure`) is returned immediately as-is.
 4. **Missing Remote Config**: If local rejection occurs and remote configuration is missing or invalid, the original local rejection receipt is returned with its reason annotated: `"<reason> (remote fallback unavailable)"`.
 5. **Standalone Remote Mode**: If `PI_PET_RUNTIME_MODULE` is not configured but valid remote configuration exists, the extension validates parameters inline and dispatches directly to the remote endpoint.
+
+## Local Inbox Consumption (Desktop → Pi)
+
+The extension automatically attaches an inbox consumer loop when Pi initializes (`session_start`). It continuously polls the local session inbox for pending user messages sent from the desktop pet UI.
+
+### Setup & Environment
+- Requires `PI_PET_RUNTIME_MODULE` pointing to `packages/runtime/interaction.js` or `packages/runtime/index.js` (which exports `claimNextUserMessage` and `settleUserMessage`).
+- Optional environment overrides:
+  - `PI_PET_PROFILE_ID` (default: `"local"`): Profile identity component used to derive `petId`.
+  - `PI_PET_DATA_DIR` (default: `~/.pi-pet`): Root directory for inbox queues and receipts.
+
+### Consumer Behavior
+1. **Lifecycle Binding**:
+   - `session_start`: Resolves active `rawSessionId` from event/context. Derives canonical `petId` (`"pet_" + SHA256(profileId + "\0pi\0" + rawSessionId)[0..24]`). Stops any previous consumer loop and begins polling. Rejects missing, empty, or `"default"` session IDs.
+   - `session_shutdown`: Stops active polling loop and unrefs timers cleanly.
+2. **Ordered Polling & Draining**:
+   - Poll interval: `500ms` when idle.
+   - Drain interval: `0ms` (immediate next tick) when a message is claimed and processed (`hasMore: true`), draining backlogged items rapidly.
+3. **At-Most-Once Dispatch**:
+   - Claims pending message atomically into `claimed/<commandId>.json` with a generated `claimToken`.
+   - Re-checks expiration immediately before dispatch.
+   - Injects the message into the active Pi session via:
+     ```js
+     pi.sendUserMessage(text, {
+       deliverAs: "followUp",
+       expandPromptTemplates: false,
+     });
+     ```
+   - On successful invocation, settles receipt to `status: "dispatched"`.
+   - On synchronous exception, catches error, settles receipt to `status: "failed"`, and resumes loop without crashing the Pi process.
+   - Claimed messages are never requeued (at-most-once delivery). Stale claims older than 60s are swept to terminal `failed` (`delivery-unknown`).

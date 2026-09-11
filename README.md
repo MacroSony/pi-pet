@@ -18,11 +18,13 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 
 - Stable per-session identities, including remote profiles.
 - Tool/activity display, independent windows, animation transitions and local reactions.
+- Pi `pet_express(text?, emotion?)` with validated event/receipt delivery and renderer bubbles, both locally and through the existing Clawd Remote SSH path.
+- Local desktop-to-agent input (Pi own-session inbox v1): send text instructions from the desktop pet UI via Clawd `POST /pet-inbox`, queued to `~/.pi-pet/inbox/`, and consumed into the live Pi session via `pi.sendUserMessage`.
 - Presentation-write deduplication, disconnect/reconnect handling and renderer relaunch rules.
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.
 
-**Not implemented here:** agent notification tools, message bubbles/TTS, desktop-to-agent input, position-query or movement tools. The renderer has a local reaction CLI; its `message` and `speak` fields remain reserved. See [the exact boundary contract](docs/BOUNDARY-CONTRACT.md).
+**Not implemented yet:** remote SSH inbox delivery, remote capability tokens, multi-agent / peer messaging (A2A), Team/Board spatial coordination, position-query or semantic movement tools, TTS, receipt polling UI, and renderer playback acknowledgement. See [the implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
 
 ## Source checkout
 
@@ -85,6 +87,7 @@ Use the **pinned submodule commits**, not `git submodule update --remote`. Re-ru
 | `clawd-on-desk/` | [Clawd integration fork](https://github.com/MacroSony/pi-pet-clawd), branch `pi-pet-bridge` |
 | `claude-status-pet/` | [Renderer fork](https://github.com/MacroSony/pi-pet-status-pet), branch `pi-pet-mvp` |
 | `docs/BOUNDARY-CONTRACT.md` | Implemented interface and migration details |
+| `docs/PI-INBOX-CONTRACT.md` | Implemented local Pi own-session inbox v1 contract |
 | `docs/PUBLICATION.md` | Validation scope, publication checks and known limitations |
 
 The package's `private: true` prevents accidental **npm publication**; it does not make this GitHub repository private.
