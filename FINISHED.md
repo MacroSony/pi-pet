@@ -14,12 +14,20 @@
 - Real Disconnect/reconnect testing passed without restarting either Windows Pi or either Homelab Pi: both catalogs recovered after heartbeat, the pre-disconnect handle returned `invalid handle: not_found`, and a fresh remote→local note was queued and observed exactly once with correct provenance.
 - Accepted M2 heads: root `23b547c`, Clawd `b454b57e`, renderer `1e06c62`. Final pre-M3 root suite: **211/211**; Disconnect-focused Clawd: **421/421**; Clawd full suite: **9,416 passed / 5 unrelated existing failures / 52 skipped**.
 
-## 2026-09-12 — Milestone 3a started
+## 2026-09-12 — Milestone 3a design and Team-state spike parked
 
 - Created `milestone3` branches from the accepted M2 root and Clawd heads.
-- Froze [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md): Team-authorized bounded wake, receiver opt-in, coordinator wake budgets, user-first delivery and a hard two-auto-turn thread limit.
-- Started M3a.1 neutral Team state with strict v1 schema, fixed `leader/member/observer` roles, `user_only` membership, max-eight membership, generated IDs, atomic persistence, revision conflicts, leader transfer, dissolution and fail-closed corrupt-file handling.
-- M2 global peer notes remain permanently passive and backward compatible. Shared Board, Team UI and semantic movement are not part of M3a.1.
+- Wrote [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md) for the hardened path: Team-authorized bounded wake, receiver opt-in, coordinator wake budgets, user-first delivery and a hard two-auto-turn thread limit.
+- Completed the isolated M3a.1 neutral Team-store spike with strict v1 schema, fixed `leader/member/observer` roles, `user_only` membership, max-eight membership, generated IDs, atomic persistence, revision conflicts, leader transfer, dissolution and fail-closed corrupt-file handling. Focused tests passed **33/33** and root passed **244/244**; commit `5eed86b` was pushed.
+- Product review determined that wiring Team/ACL/Board before trying active peer collaboration was premature. The Team-store commit and hardened contract are parked while a minimal receiver-local, default-off peer-wake PoC is tested on Windows and Homelab.
+
+## 2026-09-12 — Lean peer-wake PoC automated slice complete
+
+- Added `/pet-peer-wake on|off|status`. Opt-in is current-session/current-attach memory only, defaults off, and resets on session start, shutdown, or extension reload.
+- Preserved the accepted M2 protocol and endpoints. Passive receivers still use `triggerTurn:false`; opted-in receivers dynamically use `triggerTurn:true` without adding Team state, persistence, coordinator policy, network ports, or wake-budget infrastructure.
+- Reused the process-private peer capability slot to bridge the root command to Clawd's separately managed Remote SSH consumer. Token matching fails closed and no wake policy is exposed over the wire.
+- Hop 0 receives only its existing single-use reply handle and bounded reply guidance. Hop 1 receives no reply handle and an explicit stop instruction. User-first claim ordering, TTL, dedup, rate limits, provenance and at-most-once settlement remain unchanged.
+- Automated verification passed: root **251/251**; focused Clawd extension/capability/installer/remote-consumer **58/58**; remote wake coverage includes enabled hop 0 and hop 1. Windows ↔ Homelab live two-turn product smoke remains the decision gate, not an automated-test substitute.
 
 ## 2026-09-09 — Secure Remote Pi inbox and terminal receipt visibility
 

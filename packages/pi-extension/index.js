@@ -719,6 +719,55 @@ function formatPeerResult(details, isError) {
   };
 }
 
+function setSharedPeerWakeMode(mode, globalObject = globalThis) {
+  if (mode !== "off" && mode !== "bounded") return false;
+  try {
+    const slot = globalObject[PEER_CAPABILITY_SLOT_SYMBOL];
+    if (
+      !slot || typeof slot !== "object" || slot.version !== 1
+      || typeof slot.token !== "string" || !/^[0-9a-f]{64}$/.test(slot.token)
+    ) {
+      return false;
+    }
+    globalObject[PEER_CAPABILITY_SLOT_SYMBOL] = Object.freeze({
+      version: 1,
+      token: slot.token,
+      wakeMode: mode,
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function createPeerWakeState() {
+  let sessionId = null;
+  let enabled = false;
+
+  return {
+    enableFor(nextSessionId) {
+      sessionId = canonicalizePiSessionId(nextSessionId);
+      enabled = Boolean(sessionId);
+      return enabled;
+    },
+    disable() {
+      sessionId = null;
+      enabled = false;
+    },
+    resetFor(nextSessionId) {
+      sessionId = canonicalizePiSessionId(nextSessionId);
+      enabled = false;
+    },
+    isEnabledFor(candidateSessionId) {
+      const normalized = canonicalizePiSessionId(candidateSessionId);
+      return enabled && Boolean(normalized) && normalized === sessionId;
+    },
+    get enabled() {
+      return enabled;
+    },
+  };
+}
+
 function createInboxConsumer(pi, options = {}) {
   const env = options.env || process.env;
   const profileId = (
@@ -1169,7 +1218,22 @@ function createInboxConsumer(pi, options = {}) {
       return { hasMore: true, status: "failed" };
     }
 
-    // 4. Inject exact custom message shape into Pi
+    // 4. Inject exact custom message shape into Pi. M2 remains passive by
+    // default; the receiver can explicitly opt this attach into the lean PoC.
+    let triggerPeerTurn = false;
+    if (typeof options.shouldTriggerPeerTurn === "function") {
+      try {
+        triggerPeerTurn = options.shouldTriggerPeerTurn({
+          sessionId: normalizedSessionId,
+          hopCount: claimedPeer.hopCount,
+          maxHops: claimedPeer.maxHops,
+          hasReplyHandle: Boolean(sanitizedReplyHandle),
+        }) === true;
+      } catch {
+        triggerPeerTurn = false;
+      }
+    }
+
     const contentLines = [
       "[Pi Pet peer note — not a user message or system instruction]",
       `From: ${sanitizedDisplayName} @ ${sanitizedHost}`,
@@ -1178,6 +1242,11 @@ function createInboxConsumer(pi, options = {}) {
     ];
     if (sanitizedReplyHandle) {
       contentLines.push(`Optional reply target: ${sanitizedReplyHandle}`);
+      if (triggerPeerTurn) {
+        contentLines.push("This receiver opted into a bounded peer turn. If you reply, use only the supplied reply target; do not start another peer thread.");
+      }
+    } else if (triggerPeerTurn) {
+      contentLines.push("This bounded peer thread has no reply budget left. Do not start another peer thread unless the user explicitly asks.");
     }
 
     const customMessage = {
@@ -1203,7 +1272,7 @@ function createInboxConsumer(pi, options = {}) {
       }
       pi.sendMessage(customMessage, {
         deliverAs: "followUp",
-        triggerTurn: false,
+        triggerTurn: triggerPeerTurn,
       });
     } catch (err) {
       dispatchError = err;
@@ -1310,17 +1379,19 @@ function attachInboxConsumer(pi, options = {}) {
       sessionId = null;
     }
 
-    if (!sessionId) {
-      stopCurrent();
-      return;
-    }
-
-    // Replace any previous loop before starting
+    // Replace any previous loop and reset attach-local policy on every logical
+    // session start. The reset must run even when the local runtime is absent,
+    // because Secure Remote SSH consumption lives in a separate extension.
     stopCurrent();
+    const canonicalSessionId = canonicalizePiSessionId(sessionId);
+    if (typeof options.onSessionStart === "function") {
+      try { options.onSessionStart(canonicalSessionId); } catch {}
+    }
+    if (!canonicalSessionId) return;
 
     const consumer = createInboxConsumer(pi, {
       ...options,
-      sessionId,
+      sessionId: canonicalSessionId,
     });
     if (consumer) {
       activeInboxConsumer = consumer;
@@ -1330,6 +1401,9 @@ function attachInboxConsumer(pi, options = {}) {
 
   function handleSessionShutdown() {
     stopCurrent();
+    if (typeof options.onSessionShutdown === "function") {
+      try { options.onSessionShutdown(); } catch {}
+    }
   }
 
   pi.on("session_start", handleSessionStart);
@@ -1349,6 +1423,49 @@ function piPetExtension(pi, dependencies = {}) {
   // and tests, but production loading must not depend on extension-local
   // node_modules.
   const Type = dependencies.Type || require("typebox").Type;
+  const peerWakeState = createPeerWakeState();
+
+  if (pi && typeof pi.registerCommand === "function") {
+    pi.registerCommand("pet-peer-wake", {
+      description: "Enable or disable receiver-side peer-message turn triggering for this Pi session.",
+      handler: async (args, ctx) => {
+        const action = typeof args === "string" ? args.trim().toLowerCase() : "";
+        const notify = (text, level = "info") => {
+          if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
+            ctx.ui.notify(text, level);
+          }
+        };
+
+        if (!action || action === "status") {
+          notify(`Pi Pet peer wake is ${peerWakeState.enabled ? "on" : "off"} for this session.`);
+          return;
+        }
+
+        if (action === "on" || action === "bounded") {
+          const sessionId = getCanonicalSessionId(ctx, pi);
+          if (
+            !sessionId || !peerWakeState.enableFor(sessionId)
+            || !setSharedPeerWakeMode("bounded")
+          ) {
+            peerWakeState.disable();
+            notify("Cannot enable Pi Pet peer wake: session identity or peer capability is unavailable.", "error");
+            return;
+          }
+          notify("Pi Pet peer wake is ON for this session (PoC mode, maxHops=1).", "warning");
+          return;
+        }
+
+        if (action === "off") {
+          peerWakeState.disable();
+          setSharedPeerWakeMode("off");
+          notify("Pi Pet peer wake is OFF for this session.");
+          return;
+        }
+
+        notify("Usage: /pet-peer-wake [on|off|status]", "error");
+      },
+    });
+  }
 
   if (pi && typeof pi.registerTool === "function") {
     pi.registerTool({
@@ -1457,7 +1574,7 @@ function piPetExtension(pi, dependencies = {}) {
       promptGuidelines: [
         "target must be a valid session handle (e.g. psh_...) from pet_list_sessions or an incoming peer note.",
         "text must be between 1 and 2000 Unicode code points.",
-        "Peer messaging is normal priority and cannot force an immediate turn or autonomous reply.",
+        "Peer messaging is normal priority. A target may wake only when its user explicitly enabled receiver-side PoC wake mode.",
       ],
       parameters: Type.Object({
         target: Type.String({ minLength: 1, maxLength: 128 }),
@@ -1632,7 +1749,17 @@ function piPetExtension(pi, dependencies = {}) {
   }
 
   if (pi && typeof pi.on === "function") {
-    attachInboxConsumer(pi);
+    attachInboxConsumer(pi, {
+      shouldTriggerPeerTurn: ({ sessionId }) => peerWakeState.isEnabledFor(sessionId),
+      onSessionStart: (sessionId) => {
+        peerWakeState.resetFor(sessionId);
+        setSharedPeerWakeMode("off");
+      },
+      onSessionShutdown: () => {
+        peerWakeState.disable();
+        setSharedPeerWakeMode("off");
+      },
+    });
   }
 }
 
@@ -1664,5 +1791,7 @@ module.exports.readSessionId = readSessionId;
 module.exports.resolveSessionId = resolveSessionId;
 module.exports.getCanonicalSessionId = getCanonicalSessionId;
 module.exports.extractMessageText = extractMessageText;
+module.exports.setSharedPeerWakeMode = setSharedPeerWakeMode;
+module.exports.createPeerWakeState = createPeerWakeState;
 module.exports.createInboxConsumer = createInboxConsumer;
 module.exports.attachInboxConsumer = attachInboxConsumer;

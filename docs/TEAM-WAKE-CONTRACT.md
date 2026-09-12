@@ -1,8 +1,10 @@
 # Pi Pet Team and Bounded Wake Contract v1
 
-> Status: frozen implementation contract for Milestone 3a.
+> Status: **parked productization contract**. It is retained as the hardened design if the Lean active-message PoC passes its decision gate; it is not a prerequisite or claim about the current PoC implementation.
 >
-> Scope: user-created static Teams, fixed Team ACL, Team-scoped messaging handles, and explicitly enabled two-turn Agent collaboration. Shared Board is Milestone 3b. Renderer Team UI and semantic movement are later slices.
+> Current PoC delta: `/pet-peer-wake on|off|status` temporarily allows an explicitly opted-in receiver to run the existing M2 peer note with `triggerTurn:true`. It reuses `maxHops=1` and prompt guidance but does **not** implement Team-scoped handles, coordinator budgets, capability-policy heartbeat, or a hard turn lease.
+>
+> Scope after decision gate: user-created static Teams, fixed Team ACL, Team-scoped messaging handles, and explicitly enabled two-turn Agent collaboration. Shared Board is a later slice. Renderer Team UI and semantic movement are later still.
 
 ## 1. Product boundary
 
@@ -15,7 +17,7 @@ Milestone 3a adds authorization and bounded wake to existing live sessions; it d
 - **The Pi extension owns** session-local wake opt-in, user-first dispatch, Pi turn-boundary integration, and a single auto-turn lease.
 - **The renderer sees** only sanitized Team/member projections and opaque handles. It never sees raw session IDs, internal pet IDs, tokens, cwd, transcripts, or routing metadata.
 
-M2 global peer notes remain backward compatible and permanently passive (`triggerTurn:false`). Only a Team-scoped send may request bounded wake.
+The accepted M2 baseline remains backward compatible and passive (`triggerTurn:false`). The Lean PoC is a receiver-local, default-off exception used only to test product value before Team work resumes. In the hardened design below, only a Team-scoped send may request bounded wake.
 
 ## 2. Team model
 
@@ -113,7 +115,7 @@ Wake is fail-closed and session-local.
 
 ```text
 /pet-peer-wake status
-/pet-peer-wake bounded
+/pet-peer-wake on
 /pet-peer-wake off
 ```
 

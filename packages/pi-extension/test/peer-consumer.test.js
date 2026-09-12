@@ -958,6 +958,8 @@ test("separate attaches isolation: multiple attached consumers do not share pend
 
 test("timer unref and stop on reload clears scheduler state", async () => {
   let unrefCalled = 0;
+  const startedSessions = [];
+  let shutdownCount = 0;
   const customSetTimeout = (fn, delay) => {
     const timer = setTimeout(fn, delay);
     const origUnref = timer.unref;
@@ -979,18 +981,23 @@ test("timer unref and stop on reload clears scheduler state", async () => {
     },
     pollIntervalMs: 5000,
     setTimeout: customSetTimeout,
+    onSessionStart: (sessionId) => startedSessions.push(sessionId),
+    onSessionShutdown: () => { shutdownCount++; },
   });
 
   mockPi.emit("session_start", { sessionId: "ses-reload-test" });
   const consumer = lifecycle.getActiveConsumer();
   assert.ok(consumer);
   assert.equal(consumer.isRunning, true);
+  assert.deepEqual(startedSessions, ["pi:ses-reload-test"]);
+  assert.equal(shutdownCount, 0);
   assert.ok(unrefCalled >= 1, "setTimeout timer must be unref'ed");
 
   // session_shutdown with reason 'reload' stops consumer and clears timer
   mockPi.emit("session_shutdown", { reason: "reload" });
   assert.equal(consumer.isRunning, false);
   assert.equal(lifecycle.getActiveConsumer(), null);
+  assert.equal(shutdownCount, 1);
 
   lifecycle.stop();
 });

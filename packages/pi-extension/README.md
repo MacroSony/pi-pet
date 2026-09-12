@@ -1,10 +1,11 @@
-# pi-pet Pi extension (Phase B & Inbox v1)
+# pi-pet Pi extension
 
-Registers the `pet_express(text?, emotion?)` tool for agent-to-pet expressions and attaches the local inbox consumer for desktop-to-agent user instructions.
+Registers `pet_express`, `pet_list_sessions`, and `pet_send`; attaches the local user/peer inbox consumer; and exposes the receiver-local Lean PoC command `/pet-peer-wake`.
 
 Contracts:
 - Agent Expressions: [`docs/drafts/phase-a-interaction-contract.md`](../../docs/drafts/phase-a-interaction-contract.md)
 - User Inbox v1: [`docs/PI-INBOX-CONTRACT.md`](../../docs/PI-INBOX-CONTRACT.md)
+- Peer Messaging v1: [`docs/PEER-MESSAGING-CONTRACT.md`](../../docs/PEER-MESSAGING-CONTRACT.md)
 
 The agent never supplies petId/commandId/TTL/timestamps — this extension attaches them
 from its own session context (`ctx.sessionManager.getSessionId()`), and the neutral
@@ -131,6 +132,28 @@ The extension automatically attaches an inbox consumer loop when Pi initializes 
    - On synchronous exception, catches error, settles receipt to `status: "failed"`, and resumes loop without crashing the Pi process.
    - Claimed messages are never requeued (at-most-once delivery). Stale claims older than 60s are swept to terminal `failed` (`delivery-unknown`).
 
+## Peer Messaging and Lean Wake PoC
+
+`pet_list_sessions` returns sanitized, opaque short-lived handles. `pet_send` sends an explicitly attributed custom peer note; it never impersonates user input. User inbox claims remain higher priority than peer claims.
+
+Peer delivery is passive by default:
+
+```js
+pi.sendMessage(peerNote, { deliverAs: "followUp", triggerTurn: false });
+```
+
+For the current product-value PoC, the receiver may explicitly opt its current attach into automatic peer turns:
+
+```text
+/pet-peer-wake on
+/pet-peer-wake off
+/pet-peer-wake status
+```
+
+Opt-in is memory-only, defaults to off, and resets on session shutdown, extension reload, or a new session start. When enabled, valid peer notes use `triggerTurn:true`. Existing M2 TTL, dedup, rate limit, provenance, user-first ordering and `maxHops=1` remain unchanged: hop 0 may include one supplied reply handle; hop 1 has no reply handle and tells the model to stop. This PoC does not add Team ACL, coordinator wake budgets, persistence, or a hard turn lease.
+
+The root extension and Clawd's managed extension share only the existing process-private peer capability slot. The command adds a `wakeMode` flag while preserving the capability token; the remote consumer validates the same token and reads the flag at dispatch time. Nothing is advertised over the wire and no new endpoint is opened.
+
 ## Secure Remote SSH Inbox Consumption
 
-Remote Pi sessions use Clawd's separately managed extension (`clawd-on-desk/hooks/pi-extension-core.js`), not the local filesystem consumer in this package. The desktop still enqueues through local Clawd; the remote extension advertises an attach-scoped capability over authenticated `/state`, then claim/settle polls through the existing SSH reverse tunnel. Settle retries never re-invoke `pi.sendUserMessage`. See [the inbox contract](../../docs/PI-INBOX-CONTRACT.md) for the exact trust and receipt semantics.
+Remote Pi sessions use Clawd's separately managed extension (`clawd-on-desk/hooks/pi-extension-core.js`), not the local filesystem consumer in this package. The desktop still enqueues through local Clawd; the remote extension advertises an attach-scoped capability over authenticated `/state`, then claim/settle polls through the existing SSH reverse tunnel. User settle retries never re-invoke `pi.sendUserMessage`; peer settle retries never re-invoke `pi.sendMessage`. See the inbox and peer contracts for the exact trust and receipt semantics.
