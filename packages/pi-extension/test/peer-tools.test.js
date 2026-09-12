@@ -1122,16 +1122,24 @@ test("surfaces server rejections and non-success statuses as isError: true", asy
 
 test("handles abort signal and network transport failures cleanly", async () => {
   const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pet-abort-"));
-  const localConfigPath = path.join(tmpDir, "runtime.json");
-  // Port where no server is listening
+  const remoteConfigPath = path.join(tmpDir, "clawd-remote.json");
+  // Ask the OS for an ephemeral port, then close it so this process controls the
+  // connection-refused precondition instead of assuming shared port 23337 is idle.
+  const deadEndpoint = await startRemoteTestServer((_req, res) => res.end());
+  const deadPort = deadEndpoint.port;
+  await deadEndpoint.close();
   fs.writeFileSync(
-    localConfigPath,
-    JSON.stringify({ app: "clawd-on-desk", port: 23337, ownerPid: process.pid })
+    remoteConfigPath,
+    JSON.stringify({
+      remotePort: deadPort,
+      routingNonce: "abcdef0123456789abcdef0123456789",
+      profileId: "remote-abort-test",
+    })
   );
 
   setPeerCapabilitySlot(VALID_TOKEN);
-  process.env.PI_PET_CLAWD_RUNTIME_CONFIG = localConfigPath;
-  process.env.PI_PET_CLAWD_REMOTE_CONFIG = path.join(tmpDir, "nonexistent-remote.json");
+  process.env.PI_PET_CLAWD_RUNTIME_CONFIG = path.join(tmpDir, "nonexistent-runtime.json");
+  process.env.PI_PET_CLAWD_REMOTE_CONFIG = remoteConfigPath;
 
   try {
     const tools = registerTools();
