@@ -6,7 +6,7 @@
   "main": "packages/runtime/index.js",
   "types": "packages/runtime/index.d.ts",
   "scripts": {
-    "test": "node --test packages/runtime/test/*.test.js packages/pi-extension/test/*.test.js"
+    "test": "node --test --test-concurrency=4 packages/runtime/test/*.test.js packages/pi-extension/test/*.test.js"
   },
   "license": "AGPL-3.0-only",
   "type": "commonjs",

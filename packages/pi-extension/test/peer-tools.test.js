@@ -1158,7 +1158,7 @@ test("handles abort signal and network transport failures cleanly", async () => 
     assert.equal(resAborted.isError, true);
     assert.ok(resAborted.details.reason.includes("aborted"));
 
-    // 2. Connection refused (no server on 23337)
+    // 2. Connection refused at the deliberately closed ephemeral endpoint
     const resConnRefused = await sendTool.execute(
       "tc-net-err",
       { target: "psh_1", text: "hi" },
