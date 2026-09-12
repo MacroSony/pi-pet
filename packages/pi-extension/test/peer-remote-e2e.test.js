@@ -296,17 +296,28 @@ test("real remote peer E2E flow across Clawd main server, remote SSH ingress, an
     assert.equal(pendingData.maxHops, 1);
     assert.ok(typeof pendingData.replyHandle === "string" && pendingData.replyHandle.startsWith("psh_"));
 
+    // Queue a real user message too: the remote scheduler must dispatch it before touching peer inbox.
+    const userCommandId = "cmd_remote_user_e2e";
+    const userText = "Owner message must win over the peer note";
+    const queuedUserReceipt = runtime.enqueueUserMessage({
+      petId: targetPetId,
+      commandId: userCommandId,
+      text: userText,
+      deliverAs: "followUp",
+      dataDir: tempDir,
+    });
+    assert.equal(queuedUserReceipt.status, "queued");
+
     // 9. Create remote inbox consumer for target
     const targetSentMessages = [];
-    let targetSendUserMessageCalls = 0;
+    const targetSentUserMessages = [];
 
     const fakeTargetPi = {
       sendMessage(customMessage, options) {
         targetSentMessages.push({ customMessage, options });
       },
-      sendUserMessage() {
-        targetSendUserMessageCalls++;
-        throw new Error("sendUserMessage must never be called for peer notes");
+      sendUserMessage(text, options) {
+        targetSentUserMessages.push({ text, options });
       },
     };
 
@@ -337,19 +348,44 @@ test("real remote peer E2E flow across Clawd main server, remote SSH ingress, an
     });
     assert.equal(scheduledTicks.length, 1, "Consumer startup must schedule initial tick");
 
-    // 10. Execute Tick 1: User claim empty -> Peer claim -> Dispatch -> Peer settle
+    // 10. Execute Tick 1: claim + dispatch the owner message; peer queue must not be touched.
+    httpPathTrace.length = 0;
+    await scheduledTicks.shift().fn();
+
+    assert.deepEqual(
+      httpPathTrace.map((r) => r.path),
+      ["/pet-inbox/claim", "/pet-inbox/settle"],
+      "Tick 1 must dispatch and settle the owner message without polling peer inbox"
+    );
+    assert.equal(ingress.getStatus().acceptedCount, 2, "Ingress must have accepted 2 owner-message requests during Tick 1");
+    assert.deepEqual(targetSentUserMessages, [{
+      text: userText,
+      options: { deliverAs: "followUp", expandPromptTemplates: false },
+    }]);
+    assert.equal(targetSentMessages.length, 0, "Peer note must remain queued while the owner message dispatches");
+    assert.equal(fs.readdirSync(pendingDir).length, 1, "Peer pending file must survive the owner-message tick");
+
+    const userReceipt = runtime.getUserMessageReceipt({
+      petId: targetPetId,
+      commandId: userCommandId,
+      dataDir: tempDir,
+    });
+    assert.ok(userReceipt, "Owner-message receipt must be persisted");
+    assert.equal(userReceipt.status, "dispatched");
+
+    // Tick 2: only after a trusted explicit empty user claim may peer claim + dispatch + settle run.
+    assert.equal(scheduledTicks.length, 1, "Consumer must have scheduled Tick 2");
     httpPathTrace.length = 0;
     await scheduledTicks.shift().fn();
 
     assert.deepEqual(
       httpPathTrace.map((r) => r.path),
       ["/pet-inbox/claim", "/pet-peer/claim", "/pet-peer/settle"],
-      "Tick 1 must query user claim (empty), then peer claim (claimed), then peer settle (dispatched)"
+      "Tick 2 must observe the empty user inbox before claiming and settling peer inbox"
     );
-
-    assert.equal(ingress.getStatus().acceptedCount, 3, "Ingress must have accepted 3 requests during Tick 1");
-    assert.equal(targetSendUserMessageCalls, 0, "sendUserMessage must never be called");
-    assert.equal(targetSentMessages.length, 1, "Target Pi must receive exactly one sendMessage");
+    assert.equal(ingress.getStatus().acceptedCount, 5, "Ingress must have accepted 5 requests across owner and peer ticks");
+    assert.equal(targetSentUserMessages.length, 1, "Owner message must not be duplicated");
+    assert.equal(targetSentMessages.length, 1, "Target Pi must receive exactly one peer sendMessage");
 
     const dispatched = targetSentMessages[0];
     assert.deepEqual(dispatched.options, { deliverAs: "followUp", triggerTurn: false });
@@ -415,20 +451,20 @@ test("real remote peer E2E flow across Clawd main server, remote SSH ingress, an
       assert.equal(eventDataSerialized.includes(secret), false, `Event file must not contain ${secret}`);
     }
 
-    // 12. Execute Tick 2: Empty queues, no duplicate dispatch
-    assert.equal(scheduledTicks.length, 1, "Consumer must have scheduled next tick");
+    // 12. Execute Tick 3: both queues empty, no duplicate dispatch
+    assert.equal(scheduledTicks.length, 1, "Consumer must have scheduled Tick 3");
     httpPathTrace.length = 0;
     await scheduledTicks.shift().fn();
 
     assert.deepEqual(
       httpPathTrace.map((r) => r.path),
       ["/pet-inbox/claim", "/pet-peer/claim"],
-      "Tick 2 must query user claim (empty), then peer claim (empty)"
+      "Tick 3 must query the empty user inbox before the empty peer inbox"
     );
 
-    assert.equal(ingress.getStatus().acceptedCount, 5, "Ingress must have accepted 5 total requests across ticks");
-    assert.equal(targetSentMessages.length, 1, "Target Pi must not receive duplicate sendMessage");
-    assert.equal(targetSendUserMessageCalls, 0, "sendUserMessage must remain 0");
+    assert.equal(ingress.getStatus().acceptedCount, 7, "Ingress must have accepted 7 total requests across three ticks");
+    assert.equal(targetSentMessages.length, 1, "Target Pi must not receive duplicate peer sendMessage");
+    assert.equal(targetSentUserMessages.length, 1, "Target Pi must not receive duplicate owner message");
   } finally {
     // 13. Robust cleanup
     delete globalThis[PEER_SLOT];
