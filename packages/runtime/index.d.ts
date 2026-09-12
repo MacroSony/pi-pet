@@ -338,3 +338,128 @@ export declare const MIN_PEER_MESSAGE_TTL_MS: 1000;
 export declare const MAX_PEER_MESSAGE_TTL_MS: 300000;
 export declare const MAX_PEER_INBOX_QUEUE_CAPACITY: 16;
 export declare const PEER_CLAIM_TIMEOUT_MS: 60000;
+
+export type TeamRole = "leader" | "member" | "observer";
+export type TeamStatus = "active" | "dissolved";
+export type TeamMembershipPolicy = "user_only";
+
+export interface TeamMember {
+  petId: string;
+  role: TeamRole;
+  joinedAtMs: number;
+}
+
+export interface Team {
+  schemaVersion: "1";
+  teamId: string;
+  name: string;
+  status: TeamStatus;
+  revision: number;
+  membershipPolicy: TeamMembershipPolicy;
+  leaderPetId: string;
+  members: TeamMember[];
+  createdAtMs: number;
+  updatedAtMs: number;
+}
+
+export interface TeamUserActor {
+  kind: "user";
+}
+
+export type TeamActor = TeamUserActor;
+
+export interface CreateTeamMemberInput {
+  petId: string;
+  role?: TeamRole;
+}
+
+export interface CreateTeamOptions {
+  name: string;
+  leaderPetId: string;
+  members?: Array<CreateTeamMemberInput | string>;
+  actor: TeamActor;
+}
+
+export interface GetTeamOptions {
+  teamId: string;
+}
+
+export interface ListTeamsForPetOptions {
+  petId: string;
+}
+
+export interface AddMemberOptions {
+  teamId: string;
+  petId: string;
+  role?: "member" | "observer";
+  baseRevision: number;
+  actor: TeamActor;
+}
+
+export interface RemoveMemberOptions {
+  teamId: string;
+  petId: string;
+  baseRevision: number;
+  actor: TeamActor;
+}
+
+export interface SetMemberRoleOptions {
+  teamId: string;
+  petId: string;
+  role: TeamRole;
+  baseRevision: number;
+  actor: TeamActor;
+}
+
+export interface DissolveTeamOptions {
+  teamId: string;
+  baseRevision: number;
+  actor: TeamActor;
+}
+
+export interface TeamMutationSuccess {
+  ok: true;
+  team: Team;
+}
+
+export interface TeamMutationError {
+  ok: false;
+  error: string;
+  reason?: string;
+  currentRevision?: number;
+}
+
+export type TeamMutationResult = TeamMutationSuccess | TeamMutationError;
+
+export interface TeamStoreConfig {
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  fsApi?: unknown;
+  now?: () => number;
+  randomBytes?: (size: number) => Buffer;
+}
+
+/**
+ * Optimistic Concurrency Control (OCC) note:
+ * Revision checking assumes operations are coordinated through a canonical single-writer coordinator.
+ * Cross-process atomic CAS is not claimed.
+ */
+export interface TeamStore {
+  createTeam(options: CreateTeamOptions): TeamMutationResult;
+  getTeam(options: GetTeamOptions): Team | null;
+  listTeamsForPet(options: ListTeamsForPetOptions): Team[];
+  addMember(options: AddMemberOptions): TeamMutationResult;
+  removeMember(options: RemoveMemberOptions): TeamMutationResult;
+  setMemberRole(options: SetMemberRoleOptions): TeamMutationResult;
+  dissolveTeam(options: DissolveTeamOptions): TeamMutationResult;
+}
+
+export declare function createTeamStore(config?: TeamStoreConfig): TeamStore;
+export declare function isSafeTeamId(teamId: string): boolean;
+
+export declare const MAX_TEAM_MEMBERS: 8;
+export declare const MIN_TEAM_NAME_LENGTH: 1;
+export declare const MAX_TEAM_NAME_LENGTH: 80;
+export declare const TEAM_MEMBERSHIP_POLICY: "user_only";
+export declare const VALID_TEAM_ROLES: readonly TeamRole[];
+export declare const VALID_TEAM_STATUSES: readonly TeamStatus[];

@@ -2,6 +2,25 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-12 — Milestone 2 local and Secure Remote SSH peer messaging accepted
+
+- Froze and implemented the M2 peer contract: caller-scoped opaque catalog/reply handles, capability-generation binding, provenance, TTL, dedup, source rate limit, `maxHops=1`, user-first scheduling, separate peer inboxes and conservative receipts.
+- Pi peer notes use explicit custom-message provenance and `pi.sendMessage(..., { deliverAs: "followUp", triggerTurn: false })`; they never impersonate user input or autonomously wake an idle model.
+- Added local and Remote SSH claim/settle consumers, dispatched source bubbles, Clawd restart heartbeat recovery, attach token rotation, stale-token protection, and strict renderer/Agent projections without raw session IDs, cwd, transcripts, tokens or internal pet IDs.
+- Added show-without-activate and reliable first-appearance multi-pet staggering while preserving user-saved positions. Removed the failed proximity Huddle experiment and added anti-regression coverage; physical proximity no longer implies relationship or permissions.
+- Real Windows testing passed two-local-Pi discovery and bidirectional notes, single-use handle replay rejection, owner-first busy delivery, source bubbles, no automatic model turn, and exactly-once observation.
+- Real Homelab Secure Remote SSH testing passed unified cross-machine catalog, local→remote and remote→local notes, source/host provenance, TTL expiry, handle replay rejection and transport fail-closed behavior.
+- Fixed SSH Disconnect lifecycle so non-connected profiles immediately lose inbox/peer capabilities, handles, rate buckets, session directory entries and presentation pets while preserving unchanged attach tokens for heartbeat recovery.
+- Real Disconnect/reconnect testing passed without restarting either Windows Pi or either Homelab Pi: both catalogs recovered after heartbeat, the pre-disconnect handle returned `invalid handle: not_found`, and a fresh remote→local note was queued and observed exactly once with correct provenance.
+- Accepted M2 heads: root `23b547c`, Clawd `b454b57e`, renderer `1e06c62`. Final pre-M3 root suite: **211/211**; Disconnect-focused Clawd: **421/421**; Clawd full suite: **9,416 passed / 5 unrelated existing failures / 52 skipped**.
+
+## 2026-09-12 — Milestone 3a started
+
+- Created `milestone3` branches from the accepted M2 root and Clawd heads.
+- Froze [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md): Team-authorized bounded wake, receiver opt-in, coordinator wake budgets, user-first delivery and a hard two-auto-turn thread limit.
+- Started M3a.1 neutral Team state with strict v1 schema, fixed `leader/member/observer` roles, `user_only` membership, max-eight membership, generated IDs, atomic persistence, revision conflicts, leader transfer, dissolution and fail-closed corrupt-file handling.
+- M2 global peer notes remain permanently passive and backward compatible. Shared Board, Team UI and semantic movement are not part of M3a.1.
+
 ## 2026-09-09 — Secure Remote Pi inbox and terminal receipt visibility
 
 ### Coordinator and capability boundary

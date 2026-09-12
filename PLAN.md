@@ -69,7 +69,7 @@ ChildActivity  某 Session 内短命的一次性子任务表现，不是 Session
 
 ## 4. 当前关键路径
 
-### Milestone 1 — Pi own-session inbox（实现完成；真机验收待完成）
+### Milestone 1 — Pi own-session inbox（完成；自动化与 Windows/SSH 真机验收通过）
 
 先完成“用户通过桌宠给原 Pi session 发消息”的可靠闭环：
 
@@ -102,15 +102,9 @@ Tauri input
 - **Receipt 可见性**：Tauri 只从本机 `/pet-inbox/receipt` 查询，renderer 最长轮询 125 秒；明确区分 `queued`、Pi API 非抛错调用后的 `dispatched`、`failed/expired/rejected` 与保守 timeout，不把派发误报为 Agent 已完成任务。
 - **身份统一**：Clawd state、local consumer 与 remote consumer 使用同一个 canonical `pi:<sessionId>` raw identity，已带 `pi:` 时不重复添加。
 
-剩余发布级验收：
+真机验收已覆盖 Windows live Pi、Tauri GUI、真实 Secure Remote SSH tunnel、Disconnect fail-closed、Clawd restart/heartbeat capability 重注册、token/handle 轮换与无重复派发。M1 发布级主链已完成；其他发布平台 GUI 仍属于跨平台发布工作，不阻塞当前 PoC 结论。
 
-- **真机 Smoke**：真实 live Pi + Tauri GUI 的中文输入、session 切换、waiting/error 气泡恢复与 dedup。
-- **真实 SSH Smoke**：真实 tunnel 断开/恢复、Clawd 重启后 heartbeat 重注册 capability、token 轮换/撤销、终态 receipt 与无重复派发。
-- **跨平台 GUI**：至少完成目标发布平台的 Windows/macOS/Linux 手工检查；自动测试不能代替这些证据。
-
-**验收标准：**自动 contract 已满足“一句输入最多进入目标 Pi session 一次、其他 session 不受影响、断线不重放”；发布声明仍以真机 smoke 完成为准。
-
-### Milestone 2 — Session catalog 与有限 peer messaging
+### Milestone 2 — Session catalog 与有限 peer messaging（完成；自动化与本地/SSH 真机验收通过）
 
 在 own-session inbox 稳定后，扩展为受控 session-to-session 留言：
 
@@ -121,13 +115,27 @@ Tauri input
 - 用户输入优先级永远高于 peer；Agent 不能自行把消息标记为 urgent。
 - renderer 显示一次性发送者气泡、接收反应和可选短暂视觉关联；不展示 transcript。
 
-**验收：**两个本地 Pi session 和一个远程 Pi session 可以互发一次性留言；来源可辨认；忙碌 session 不被普通 peer 消息打断；循环消息被预算或 hop limit 截断。
+**验收已完成：**两个本地 Pi session 与真实 Homelab Pi session 已完成双向一次性留言；来源、untrusted 边界、user-first、exactly-once、hop 预算、Clawd restart、SSH Disconnect/reconnect、stale handle 清理和原进程 heartbeat 恢复均通过。冻结契约见 [PEER-MESSAGING-CONTRACT.md](docs/PEER-MESSAGING-CONTRACT.md)。
 
-### Milestone 3 — Team 与共享 Board
+### Milestone 3 — Team、Bounded Active Collaboration 与共享 Board（进行中）
 
-建立静态、持久且可审计的 Team；先做结构化 Board，不做自由画布。
+建立静态、持久且可审计的 Team。M3 拆成两个连续纵切片：
 
-Board v1 包含：
+#### Milestone 3a — Team ACL 与 bounded wake
+
+- Team schema、固定 `leader/member/observer` ACL 与 `user_only` membership policy 属于 Pi Pet runtime。
+- Clawd 作为 canonical single-writer host，负责可信用户控制面、Team-scoped opaque handles、capability/generation/revision 绑定和 wake budget。
+- M2 全局 `pet_send` 永远保持 passive；只有 Team-scoped message 可以请求 wake。
+- receiver 默认 `off`，必须对当前 session 显式启用 bounded wake。
+- 一个 thread 最多两次自动 turn：hop 0 唤醒目标，hop 1 可唤醒原发送者，随后无 reply handle，硬停止。
+- 自动 peer turn 期间只能使用消息附带的 reply handle，不能 fresh catalog 另起线程绕过预算。
+- 用户输入始终最高优先级；busy user work 不被 steer/interrupt。
+
+冻结实现边界见 [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md)。
+
+#### Milestone 3b — Shared Board
+
+先做结构化 Board，不做自由画布。Board v1 包含：
 
 ```text
 Goal
@@ -153,9 +161,11 @@ Artifacts (references only)
 
 **验收：**用户可把 2–4 个 Pi sessions 组成 Team、指定 leader；成员并发更新任务不会互相覆盖；成员退出/离线后 Board 仍可读；用户可撤销任何 leader 操作。
 
-### Milestone 4 — 空间协调与语义移动
+### Milestone 4 — 空间协调与语义移动（待 M3 真机价值验证后重审）
 
-先建立本地空间协调器，再做团队动作：
+早期 proximity Huddle 已因真机误触发、退出手感差和关系语义虚假而完整删除，不得回归。M4 若继续，只实现由真实 Team/讨论事件或用户明确请求触发的语义动作；位置永远不产生 Team、Board 或消息权限。
+
+候选实现仍是先建立本地空间协调器，再做团队动作：
 
 1. renderer 回报窗口物理坐标、尺寸、monitor、work area、scale 和观测时间；
 2. runtime 根据语义意图计算安全位置；
@@ -257,14 +267,14 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 
 ## 9. 当前执行顺序
 
-1. 校准并冻结 Pi inbox / peer / Team contract。（已完成）
-2. 实现 Local Pi own-session inbox 垂直切片。（已完成）
-3. 完成 Remote Pi inbox、capability 握手与断线/终态可见 receipts 的自动化实现。（已完成）
-4. 做 Milestone 1 真机 live Pi / GUI / SSH tunnel smoke；可与下一项协议工作并行。
-5. 加脱敏 session catalog、`pet_send`、receipt 与来源气泡（Milestone 2）。
-6. 加静态 Team、leader ACL 和结构化 Board（Milestone 3）。
-7. 加位置回报、`huddle` / `dismiss` 语义布局（Milestone 4）。
-8. 做跨机 Team 验证。
+1. Milestone 1 own-session inbox。（完成；自动化与 Windows/SSH 真机通过）
+2. Milestone 2 catalog + bounded passive peer messaging。（完成；本地/远程/restart/disconnect/reconnect 真机通过）
+3. M3a.1 neutral Team state：schema、固定 ACL、revision、持久化。（进行中）
+4. M3a.2 coordinator Team ACL：可信用户控制 seam、Team projection、`pth_` handles；消息先保持 passive。
+5. M3a.3 bounded wake：session-local opt-in、权威 wake budget、两次自动 turn lease、本地与真实 SSH E2E。
+6. M3b structured Board：revisioned patch、审计、并发冲突和独立 Board UI。
+7. 录制真实 Team 协作 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
+8. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。
 9. 实现 OpenCode adapter。
 10. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
 11. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
