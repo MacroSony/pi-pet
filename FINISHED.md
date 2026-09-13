@@ -2,6 +2,16 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-13 — M3c.1 visible Team and read-only Board automation complete
+
+- Added a presentation-safe Team projection sourced from the canonical Team/Board stores. Pet status files contain only Team name, caller role, sanitized member display/role/state/host, and Board status/revision/attribution/Markdown; no Team/member/session identity, capability handle/token, cwd or file path enters the Board webview.
+- Added a clickable Team badge to Team-member pets and a separate resizable `team-board` Tauri window. Closing the window never mutates or dissolves Team state, while dissolve removes the badge and changes an already-open Board to an unavailable view.
+- Rendered teammate-authored Markdown exclusively through `<pre>.textContent`; Rust applies a second bounded typed projection and drops malformed Team data without losing the ordinary pet status.
+- Team create/dissolve and successful Board writes now trigger an immediate presentation-only refresh rather than waiting for a session heartbeat. The runtime deep-copies and content-compares Team projections to preserve write deduplication.
+- Added a dedicated least-privilege Tauri capability for the dynamic Board window. It can listen for status events and close itself, but cannot emit events, drag the pet, or set window positions.
+- Fixed the root Clawd presentation adapter to consume the M3c.0 `displayTitle`, so native Pi `/name` and deterministic duplicate-name suffixes now reach the Tauri pet label.
+- Verification passed: root **323/323**, renderer JS **60/60**, renderer Rust **99/99**, Clawd focused **617/617**, and optimized renderer build. Windows GUI/live Team smoke remains before release acceptance.
+
 ## 2026-09-13 — M3c.0 clean tool output and distinct-session automation complete
 
 - Preserved full coordinator wire contracts while reducing model-visible Pi Pet tool results to operational fields. Catalog and active Team projections retain opaque handles only where the Agent needs them for routing; expression/send receipts, envelope IDs, timestamps, fixed capabilities and redundant Board write echoes no longer consume model context.

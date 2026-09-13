@@ -54,7 +54,7 @@ describe("root Clawd shim to runtime integration", () => {
     assert.strictEqual(payload.session_id, expectedId);
     assert.strictEqual(payload.state, "editing");
     assert.strictEqual(payload.tool, "Edit");
-    assert.strictEqual(payload.session_name, "Pi / pi-pet");
+    assert.strictEqual(payload.session_name, "pi-pet · Pi");
   });
 
   it("maps the complete Clawd tool/state projection matrix", () => {

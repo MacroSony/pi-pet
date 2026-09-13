@@ -6,6 +6,8 @@
 
 const { createPetRuntime, defaultStatusDir } = require("../runtime");
 const { derivePetId } = require("../identity");
+const { createTeamStore } = require("../team-store");
+const { createTeamBoardStore } = require("../team-board-store");
 
 const DEFAULT_AGENT_IDS = ["pi"];
 const MAX_LABEL_LENGTH = 120;
@@ -55,12 +57,87 @@ function presentationState(entry) {
 }
 
 function sessionName(entry) {
+  const displayTitle = normalizeText(entry && entry.displayTitle, MAX_LABEL_LENGTH);
+  const agent = normalizeText(entry && (entry.agentName || entry.agentId), 60);
+  if (displayTitle) {
+    if (!agent || displayTitle.toLowerCase() === agent.toLowerCase()
+      || displayTitle.toLowerCase().endsWith(` · ${agent.toLowerCase()}`)) {
+      return displayTitle;
+    }
+    const suffix = ` · ${agent}`;
+    return `${Array.from(displayTitle).slice(0, Math.max(0, MAX_LABEL_LENGTH - Array.from(suffix).length)).join("")}${suffix}`;
+  }
   const parts = [
     normalizeText(entry && entry.sourceDisplayLabel, 60),
     normalizeText(entry && entry.agentName, 60) || normalizeText(entry && entry.agentId, 60),
     normalizeText(entry && entry.displayFolder, 60),
   ].filter(Boolean);
   return (parts.join(" / ") || "Agent session").slice(0, MAX_LABEL_LENGTH);
+}
+
+function buildTeamPresentation(entry, snapshotSessions, options = {}) {
+  const teamStore = options.teamStore;
+  const teamBoardStore = options.teamBoardStore;
+  if (!teamStore || typeof teamStore.listTeamsForPet !== "function") return null;
+
+  const petId = stablePetSessionId(entry);
+  const teams = teamStore.listTeamsForPet({ petId });
+  const activeTeams = Array.isArray(teams) ? teams.filter((team) => team && team.status === "active") : [];
+  // Lite Team promises at most one active Team per pet. Fail closed if the
+  // persisted state violates that invariant rather than presenting an
+  // arbitrary relationship.
+  if (activeTeams.length !== 1) return null;
+
+  const team = activeTeams[0];
+  const callerMember = Array.isArray(team.members)
+    ? team.members.find((member) => member && member.petId === petId)
+    : null;
+  if (!callerMember) return null;
+
+  const entriesByPetId = new Map();
+  for (const candidate of Array.isArray(snapshotSessions) ? snapshotSessions : []) {
+    if (!candidate || candidate.agentId !== "pi" || candidate.headless === true) continue;
+    try {
+      entriesByPetId.set(stablePetSessionId(candidate), candidate);
+    } catch {}
+  }
+
+  const members = team.members.map((member, index) => {
+    const candidate = entriesByPetId.get(member.petId);
+    return {
+      displayName: candidate ? sessionName(candidate) : `Teammate ${index + 1}`,
+      role: member.role,
+      state: candidate ? presentationState(candidate) : "offline",
+      host: candidate
+        ? (normalizeText(candidate.sourceDisplayLabel, 60) || normalizeText(candidate.profileId, 60) || "local")
+        : "offline",
+    };
+  });
+
+  let board = { status: "unavailable", revision: null, markdown: "", updatedBy: "" };
+  if (teamBoardStore && typeof teamBoardStore.readBoard === "function") {
+    const result = teamBoardStore.readBoard({
+      teamId: team.teamId,
+      actor: { kind: "member", petId },
+    });
+    if (result && result.ok && result.board) {
+      const writerIndex = team.members.findIndex((member) => member.petId === result.board.updatedByPetId);
+      const writer = writerIndex >= 0 ? members[writerIndex] : null;
+      board = {
+        status: "ready",
+        revision: result.board.revision,
+        markdown: result.board.markdown,
+        updatedBy: writer ? writer.displayName : "",
+      };
+    }
+  }
+
+  return {
+    name: normalizeText(team.name, 80),
+    role: callerMember.role,
+    members,
+    board,
+  };
 }
 
 function activityDetail(entry, state) {
@@ -81,7 +158,7 @@ function activityDetail(entry, state) {
   }
 }
 
-function toPetStatus(entry, now = new Date()) {
+function toPetStatus(entry, now = new Date(), presentation = {}) {
   const state = presentationState(entry);
   const updatedAt = Number(entry && entry.updatedAt);
   const timestamp = Number.isFinite(updatedAt) && updatedAt > 0
@@ -95,6 +172,7 @@ function toPetStatus(entry, now = new Date()) {
     sessionId: stablePetSessionId(entry),
     sessionName: sessionName(entry),
     timestamp,
+    team: presentation.team || null,
   };
 }
 
@@ -110,6 +188,7 @@ function toStatusPayload(entry, now = new Date()) {
     session_id: status.sessionId,
     session_name: status.sessionName,
     timestamp: status.timestamp,
+    team: status.team,
   };
 }
 
@@ -117,6 +196,11 @@ function createClawdPresentationBridge(options = {}) {
   const enabled = options.enabled === true;
   const agentIds = normalizeAgentIds(options.agentIds);
   const runtime = createPetRuntime(options);
+  const teamStore = options.teamStore || createTeamStore({ env: options.env });
+  const teamBoardStore = options.teamBoardStore || createTeamBoardStore({
+    env: options.env,
+    teamStore,
+  });
 
   function accepted(entry) {
     return !!entry && entry.headless !== true && agentIds.has(entry.agentId);
@@ -132,9 +216,10 @@ function createClawdPresentationBridge(options = {}) {
         return { written: 0, launched: 0 };
       }
       const now = typeof options.now === "function" ? options.now : () => new Date();
-      const statuses = snapshot.sessions
-        .filter(accepted)
-        .map((entry) => toPetStatus(entry, now()));
+      const acceptedSessions = snapshot.sessions.filter(accepted);
+      const statuses = acceptedSessions.map((entry) => toPetStatus(entry, now(), {
+        team: buildTeamPresentation(entry, acceptedSessions, { teamStore, teamBoardStore }),
+      }));
       return runtime.onSnapshot({ statuses });
     },
     statusPathFor: runtime.statusPathFor,
@@ -145,6 +230,7 @@ function createClawdPresentationBridge(options = {}) {
 module.exports = {
   DEFAULT_AGENT_IDS,
   activityDetail,
+  buildTeamPresentation,
   createClawdPresentationBridge,
   defaultStatusDir,
   normalizeAgentIds,

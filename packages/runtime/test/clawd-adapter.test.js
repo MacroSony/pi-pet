@@ -9,6 +9,7 @@ const path = require("node:path");
 
 const runtime = require("..");
 const {
+  buildTeamPresentation,
   createClawdPresentationBridge,
   presentationState,
   stablePetSessionId,
@@ -61,18 +62,89 @@ describe("Clawd compatibility adapter", () => {
     assert.strictEqual(status.tool, "edit");
     assert.strictEqual(status.sessionName, "Pi / pi-pet");
     assert.match(status.sessionId, /^pet_[a-f0-9]{24}$/);
+    assert.strictEqual(status.team, null);
     assert.deepStrictEqual(Object.keys(status), [
-      "state", "detail", "tool", "event", "sessionId", "sessionName", "timestamp",
+      "state", "detail", "tool", "event", "sessionId", "sessionName", "timestamp", "team",
     ]);
   });
 
   it("preserves the file payload shape and pins the fixture identity", () => {
     const payload = toStatusPayload(makeSession());
     assert.deepStrictEqual(Object.keys(payload), [
-      "state", "detail", "tool", "event", "session_id", "session_name", "timestamp",
+      "state", "detail", "tool", "event", "session_id", "session_name", "timestamp", "team",
     ]);
+    assert.strictEqual(payload.team, null);
     assert.strictEqual(payload.session_id, "pet_cec55f09cef648db9a003c6c");
     assert.strictEqual(payload.session_id, stablePetSessionId(makeSession()));
+  });
+
+  it("prefers Clawd's presentation-safe displayTitle", () => {
+    const status = toPetStatus(makeSession({
+      displayTitle: "Assistant #A1B2 · Pi",
+      displayFolder: "secret-working-directory",
+    }));
+    assert.strictEqual(status.sessionName, "Assistant #A1B2 · Pi");
+    assert.ok(!status.sessionName.includes("secret-working-directory"));
+  });
+
+  it("builds an ID-free Team and Board presentation", () => {
+    const leader = makeSession({ displayTitle: "Builder · Pi" });
+    const member = makeSession({
+      id: "pi:session-b",
+      rawSessionId: "session-b",
+      profileId: "homelab",
+      displayTitle: "Reviewer · Pi",
+      sourceDisplayLabel: "homelab",
+      state: "idle",
+      toolName: null,
+    });
+    const leaderPetId = stablePetSessionId(leader);
+    const memberPetId = stablePetSessionId(member);
+    const team = {
+      teamId: "team_internal_secret",
+      name: "Release Crew",
+      status: "active",
+      members: [
+        { petId: leaderPetId, role: "leader" },
+        { petId: memberPetId, role: "member" },
+      ],
+    };
+    const projection = buildTeamPresentation(leader, [leader, member], {
+      teamStore: { listTeamsForPet: () => [team] },
+      teamBoardStore: {
+        readBoard: ({ teamId, actor }) => {
+          assert.strictEqual(teamId, team.teamId);
+          assert.deepStrictEqual(actor, { kind: "member", petId: leaderPetId });
+          return { ok: true, board: { revision: 3, markdown: "# Plan\nShip it", updatedByPetId: memberPetId } };
+        },
+      },
+    });
+    assert.deepStrictEqual(projection, {
+      name: "Release Crew",
+      role: "leader",
+      members: [
+        { displayName: "Builder · Pi", role: "leader", state: "editing", host: "local" },
+        { displayName: "Reviewer · Pi", role: "member", state: "idle", host: "homelab" },
+      ],
+      board: { status: "ready", revision: 3, markdown: "# Plan\nShip it", updatedBy: "Reviewer · Pi" },
+    });
+    const rendered = JSON.stringify(projection);
+    for (const secret of [team.teamId, leaderPetId, memberPetId, "session-a", "session-b"]) {
+      assert.ok(!rendered.includes(secret));
+    }
+  });
+
+  it("fails closed for multiple active Teams and unavailable Boards", () => {
+    const session = makeSession();
+    const petId = stablePetSessionId(session);
+    const team = { teamId: "team_one", name: "One", status: "active", members: [{ petId, role: "leader" }] };
+    assert.strictEqual(buildTeamPresentation(session, [session], {
+      teamStore: { listTeamsForPet: () => [team, { ...team, teamId: "team_two" }] },
+    }), null);
+    assert.deepStrictEqual(buildTeamPresentation(session, [session], {
+      teamStore: { listTeamsForPet: () => [team] },
+      teamBoardStore: { readBoard: () => ({ ok: false, error: "corrupt_board" }) },
+    }).board, { status: "unavailable", revision: null, markdown: "", updatedBy: "" });
   });
 
   it("uses profile identity so remote and local session IDs never collide", () => {
@@ -278,6 +350,7 @@ describe("PetStatus fixture contract", () => {
       session_id: "pet_fixture",
       session_name: "Pi / project",
       timestamp: "2026-09-01T00:00:00.000Z",
+      team: null,
     });
     assert.strictEqual(runtime.toStatusFilePayload({ session_id: "legacy" }).session_id, undefined);
   });

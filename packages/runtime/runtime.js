@@ -26,7 +26,8 @@ function defaultStatusDir(env = process.env) {
 
 function presentationChanged(previous, next) {
   if (!previous) return true;
-  return PRESENTATION_COMPARE_KEYS.some((key) => previous[key] !== next[key]);
+  if (PRESENTATION_COMPARE_KEYS.some((key) => previous[key] !== next[key])) return true;
+  return JSON.stringify(previous.team || null) !== JSON.stringify(next.team || null);
 }
 
 function isSafeSessionId(sessionId) {
@@ -41,6 +42,12 @@ function assertSafeSessionId(sessionId) {
   }
 }
 
+function copyTeamPresentation(team) {
+  if (!team || typeof team !== "object") return null;
+  if (typeof structuredClone === "function") return structuredClone(team);
+  return JSON.parse(JSON.stringify(team));
+}
+
 function copyStatus(status) {
   return {
     state: status.state,
@@ -50,6 +57,7 @@ function copyStatus(status) {
     sessionId: status.sessionId,
     sessionName: status.sessionName,
     timestamp: status.timestamp,
+    team: copyTeamPresentation(status.team),
   };
 }
 
@@ -64,6 +72,7 @@ function toStatusFilePayload(status) {
     session_id: status.sessionId,
     session_name: status.sessionName,
     timestamp: status.timestamp,
+    team: copyTeamPresentation(status.team),
   };
 }
 

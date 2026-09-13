@@ -7,6 +7,27 @@ export type PetState =
   | "idle" | "thinking" | "reading" | "editing" | "searching"
   | "running" | "delegating" | "waiting" | "error" | "closed" | "offline";
 
+export interface TeamPresentationMember {
+  displayName: string;
+  role: "leader" | "member" | "observer";
+  state: PetState;
+  host: string;
+}
+
+export interface TeamBoardPresentation {
+  status: "ready" | "unavailable";
+  revision: number | null;
+  markdown: string;
+  updatedBy: string;
+}
+
+export interface TeamPresentation {
+  name: string;
+  role: "leader" | "member" | "observer";
+  members: readonly TeamPresentationMember[];
+  board: TeamBoardPresentation;
+}
+
 export interface PetStatus {
   state: PetState;
   detail: string;
@@ -15,6 +36,7 @@ export interface PetStatus {
   sessionId: string;
   sessionName: string;
   timestamp: string;
+  team?: TeamPresentation | null;
 }
 
 /** JSON written by the runtime. timestamp is retained for runtime/file
@@ -27,6 +49,7 @@ export interface PetStatusFile {
   session_id: string;
   session_name: string;
   timestamp: string;
+  team?: TeamPresentation | null;
 }
 
 export interface RuntimeOptions {
@@ -64,6 +87,7 @@ export interface ClawdSnapshotSession {
   sourceDisplayLabel: string;
   updatedAt: number;
   headless: boolean;
+  displayTitle?: string;
   lastEvent: { rawEvent: string | null; at: number } | null;
 }
 

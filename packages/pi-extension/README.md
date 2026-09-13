@@ -212,7 +212,7 @@ pet_board_write(baseRevision, markdown)
 
 The document is capped at 8192 UTF-8 bytes. A write atomically replaces the whole document only when `baseRevision` exactly matches the latest Board revision. On conflict, re-read and merge intentionally; there is no silent last-write-wins. Write authorization defaults off and resets on session start, shutdown or extension reload.
 
-Board output is teammate-authored shared data, not authenticated user instruction. The projection contains only revision, Markdown, update time and a sanitized last-writer attribution. Board writes do not send peer messages, enable wake, or modify Team membership. Whole-document replacement is an intentionally temporary PoC seam; structured patches, history, attachments, Board UI and GC remain deferred.
+Board output is teammate-authored shared data, not authenticated user instruction. The projection contains only revision, Markdown, update time and a sanitized last-writer attribution. Board writes do not send peer messages, enable wake, or modify Team membership. Whole-document replacement is an intentionally temporary PoC seam; structured patches, history, attachments, Board editing UI and GC remain deferred. A separate presentation-only read-only Board window is available through Team-member pet badges.
 
 ## Secure Remote SSH Inbox Consumption
 

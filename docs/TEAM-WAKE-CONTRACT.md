@@ -2,9 +2,9 @@
 
 > Status: **parked productization contract**. The Lean active-message decision gate passed, but this hardened Team/ACL design remains conditional rather than a prerequisite for the current PoC.
 >
-> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in.
+> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in. M3c.1 adds a presentation-only Team badge and independent read-only Board window over an ID-free projection.
 >
-> Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
+> Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/editing UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
 
 ## 1. Product boundary
 
@@ -15,7 +15,7 @@ Milestone 3a adds authorization and bounded wake to existing live sessions; it d
 - **Pi Pet runtime owns** the neutral Team schema, revision rules, fixed roles, persistence, and Board-independent Team lifecycle.
 - **Clawd owns** the canonical single-writer coordinator, trusted user control surface, session/capability resolution, Remote SSH routing, Team-scoped handles, provenance, and authoritative wake budgets.
 - **The Pi extension owns** session-local wake opt-in, user-first dispatch, Pi turn-boundary integration, and a single auto-turn lease.
-- **The renderer sees** only sanitized Team/member projections and opaque handles. It never sees raw session IDs, internal pet IDs, tokens, cwd, transcripts, or routing metadata.
+- **The renderer sees** only an ID-free presentation projection: Team name, caller role, sanitized member display/role/state/host, and bounded Board revision/attribution/Markdown. Opaque handles remain model-only routing capabilities and never enter the human Team/Board webview. The renderer never sees Team IDs, raw session IDs, internal pet IDs, tokens, cwd, transcripts, or routing metadata.
 
 The accepted M2 baseline remains backward compatible and passive (`triggerTurn:false`). The Lean PoC is a receiver-local, default-off exception used only to test product value before Team work resumes. In the hardened design below, only a Team-scoped send may request bounded wake.
 

@@ -16,6 +16,7 @@ const PET_STATUS_SCHEMA = Object.freeze({
     sessionId: "string",
     sessionName: "string",
     timestamp: "ISO-8601 string",
+    team: "null|sanitized TeamPresentation (no IDs, handles, paths, or tokens)",
   }),
   required: Object.freeze([
     "state", "detail", "tool", "event", "sessionId", "sessionName", "timestamp",
@@ -34,6 +35,7 @@ const STATUS_FILE_SCHEMA = Object.freeze({
     session_id: "string",
     session_name: "string",
     timestamp: "ISO-8601 string",
+    team: PET_STATUS_SCHEMA.fields.team,
   }),
   required: Object.freeze([
     "state", "detail", "tool", "event", "session_id", "session_name", "timestamp",
