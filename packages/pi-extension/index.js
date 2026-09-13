@@ -713,21 +713,562 @@ async function dispatchRemoteExpression(remoteConfig, { rawSessionId, toolCallId
   return postRemoteExpression(remoteConfig, remoteBody, signal);
 }
 
-function formatResult(receipt) {
+function formatToolResult(details, isError, projectFn) {
+  const projected = typeof projectFn === "function" ? projectFn(details) : details;
   return {
-    content: [{ type: "text", text: JSON.stringify(receipt) }],
-    details: receipt,
-    isError: receipt.status !== "delivered",
-  };
-}
-
-function formatPeerResult(details, isError) {
-  return {
-    content: [{ type: "text", text: JSON.stringify(details) }],
+    content: [{ type: "text", text: JSON.stringify(projected) }],
     details,
     isError: Boolean(isError),
   };
 }
+
+function formatResult(receipt) {
+  return formatToolResult(receipt, receipt ? receipt.status !== "delivered" : true, projectExpressForModel);
+}
+
+function formatPeerResult(details, isError, projectFn) {
+  return formatToolResult(details, isError, projectFn);
+}
+
+class FallbackText {
+  constructor(text = "") {
+    this.text = typeof text === "string" ? text : String(text || "");
+  }
+  toString() {
+    return this.text;
+  }
+  render() {
+    return this.text.trim() ? [this.text] : [];
+  }
+}
+
+function createText(content, TextCtor = FallbackText) {
+  const str = typeof content === "string" ? content : String(content || "");
+  if (typeof TextCtor === "function") {
+    try {
+      return new TextCtor(str, 0, 0);
+    } catch {
+      try {
+        return TextCtor(str, 0, 0);
+      } catch {
+        return new FallbackText(str);
+      }
+    }
+  }
+  return new FallbackText(str);
+}
+
+function extractResultDetails(result) {
+  if (result && typeof result.details === "object" && result.details !== null) {
+    return result.details;
+  }
+  if (result && Array.isArray(result.content) && result.content[0] && typeof result.content[0].text === "string") {
+    try {
+      return JSON.parse(result.content[0].text);
+    } catch {}
+  }
+  return null;
+}
+
+function projectExpressForModel(receipt) {
+  if (!receipt || typeof receipt !== "object" || Array.isArray(receipt)) {
+    return { status: "failed", reason: "Invalid receipt" };
+  }
+  const out = {
+    status: typeof receipt.status === "string" ? receipt.status : "failed",
+  };
+  if (receipt.reason) {
+    out.reason = receipt.reason;
+  }
+  return out;
+}
+
+function projectCatalogForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid catalog response" };
+  }
+  if (details.status && details.status !== "active") {
+    const out = { status: details.status };
+    if (details.reason) out.reason = details.reason;
+    return out;
+  }
+  const sessions = [];
+  if (Array.isArray(details.sessions)) {
+    for (const s of details.sessions) {
+      if (s && typeof s === "object") {
+        sessions.push({
+          handle: s.handle,
+          displayName: s.displayName,
+          host: s.host,
+          state: s.state,
+        });
+      }
+    }
+  }
+  return { sessions };
+}
+
+function projectSendForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid send response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+function projectTeamStatusForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid team response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (details.team && typeof details.team === "object") {
+    const members = [];
+    if (Array.isArray(details.team.members)) {
+      for (const m of details.team.members) {
+        if (m && typeof m === "object") {
+          const memberOut = {
+            displayName: m.displayName,
+            host: m.host,
+            state: m.state,
+            role: m.role,
+          };
+          if (m.handle) {
+            memberOut.handle = m.handle;
+          }
+          members.push(memberOut);
+        }
+      }
+    }
+    out.team = {
+      name: details.team.name,
+      revision: details.team.revision,
+      callerRole: details.team.callerRole,
+      members,
+    };
+  }
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+function projectTeamCreateForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid team create response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (details.team && typeof details.team === "object") {
+    const members = [];
+    if (Array.isArray(details.team.members)) {
+      for (const m of details.team.members) {
+        if (m && typeof m === "object") {
+          const memberOut = {
+            displayName: m.displayName,
+            host: m.host,
+            state: m.state,
+            role: m.role,
+          };
+          if (m.handle) {
+            memberOut.handle = m.handle;
+          }
+          members.push(memberOut);
+        }
+      }
+    }
+    out.team = {
+      name: details.team.name,
+      revision: details.team.revision,
+      callerRole: details.team.callerRole,
+      members,
+    };
+  }
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+function projectTeamDissolveForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid team dissolve response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+function projectBoardReadForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid board read response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (details.board && typeof details.board === "object") {
+    const boardOut = {
+      revision: details.board.revision,
+      markdown: details.board.markdown,
+    };
+    if (details.board.updatedBy) {
+      boardOut.updatedBy = {
+        displayName: details.board.updatedBy.displayName,
+        role: details.board.updatedBy.role,
+      };
+    }
+    out.board = boardOut;
+  }
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+function projectBoardWriteForModel(details) {
+  if (!details || typeof details !== "object" || Array.isArray(details)) {
+    return { status: "failed", reason: "Invalid board write response" };
+  }
+  const out = {
+    status: typeof details.status === "string" ? details.status : "failed",
+  };
+  if (Number.isSafeInteger(details.currentRevision)) {
+    out.currentRevision = details.currentRevision;
+  }
+  if (details.board && typeof details.board === "object") {
+    const boardOut = {
+      revision: details.board.revision,
+    };
+    if (details.board.updatedBy) {
+      boardOut.updatedBy = {
+        displayName: details.board.updatedBy.displayName,
+        role: details.board.updatedBy.role,
+      };
+    }
+    out.board = boardOut;
+  }
+  if (details.reason) {
+    out.reason = details.reason;
+  }
+  return out;
+}
+
+// ── Human Renderers (renderCall & renderResult) ──────────────────────────────
+
+function renderExpressCall(params, TextCtor = FallbackText) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return createText("pet_express", TextCtor);
+  }
+  const parts = [];
+  if (typeof params.emotion === "string" && params.emotion.trim()) {
+    parts.push(`[${params.emotion.trim()}]`);
+  }
+  if (typeof params.text === "string" && params.text.trim()) {
+    const trimmed = params.text.trim();
+    const preview = trimmed.length > 60 ? `${trimmed.slice(0, 57)}...` : trimmed;
+    parts.push(`"${preview}"`);
+  }
+  if (parts.length === 0) {
+    return createText("pet_express", TextCtor);
+  }
+  return createText(`pet_express: ${parts.join(" ")}`, TextCtor);
+}
+
+function renderExpressResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const isError = Boolean(result && result.isError) || (d && d.status !== "delivered");
+  if (isError) {
+    const status = (d && d.status) || "failed";
+    const reason = (d && d.reason) || "Expression delivery failed";
+    if (expanded) {
+      return createText(`Express ${status}\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Express ${status}: ${reason}`, TextCtor);
+  }
+  if (expanded) {
+    return createText("Expressed on desktop pet successfully.", TextCtor);
+  }
+  return createText("Expressed on desktop pet", TextCtor);
+}
+
+function renderListSessionsCall(params, TextCtor = FallbackText) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return createText("pet_list_sessions", TextCtor);
+  }
+  const filters = [];
+  if (typeof params.state === "string" && params.state.trim()) {
+    filters.push(`state=${params.state.trim()}`);
+  }
+  if (typeof params.host === "string" && params.host.trim()) {
+    filters.push(`host=${params.host.trim()}`);
+  }
+  if (filters.length > 0) {
+    return createText(`pet_list_sessions (${filters.join(", ")})`, TextCtor);
+  }
+  return createText("pet_list_sessions", TextCtor);
+}
+
+function renderListSessionsResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const isError = Boolean(result && result.isError) || (d && d.status && d.status !== "active" && !Array.isArray(d.sessions));
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to list sessions";
+    if (expanded) {
+      return createText(`Failed to list pet sessions\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to list pet sessions: ${reason}`, TextCtor);
+  }
+  const sessions = Array.isArray(d && d.sessions) ? d.sessions : [];
+  const count = sessions.length;
+  if (count === 0) {
+    if (expanded) {
+      return createText("Active Pet Sessions (0):\n  (none)", TextCtor);
+    }
+    return createText("No active pet sessions found", TextCtor);
+  }
+  if (expanded) {
+    const lines = [`Active Pet Sessions (${count}):`];
+    for (const s of sessions) {
+      const name = s.displayName || "Pi";
+      const host = s.host || "local";
+      const state = s.state || "active";
+      lines.push(`  • ${name} @ ${host} — ${state}`);
+    }
+    return createText(lines.join("\n"), TextCtor);
+  }
+  const summaries = sessions.slice(0, 3).map((s) => `${s.displayName || "Pi"} @ ${s.host || "local"} (${s.state || "active"})`);
+  const more = count > 3 ? ` (+${count - 3} more)` : "";
+  return createText(`${count} pet session${count === 1 ? "" : "s"}: ${summaries.join(", ")}${more}`, TextCtor);
+}
+
+function renderSendCall(params, TextCtor = FallbackText) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return createText("pet_send", TextCtor);
+  }
+  if (typeof params.text === "string" && params.text.trim()) {
+    const trimmed = params.text.trim();
+    const preview = trimmed.length > 50 ? `${trimmed.slice(0, 47)}...` : trimmed;
+    return createText(`pet_send: "${preview}"`, TextCtor);
+  }
+  return createText("pet_send", TextCtor);
+}
+
+function renderSendResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "queued");
+  const isError = Boolean(result && result.isError) || (status !== "queued" && status !== "dispatched");
+  if (isError) {
+    const reason = (d && d.reason) || "Send failed";
+    if (expanded) {
+      return createText(`Failed to send peer note\nStatus: ${status}\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to send peer note: ${reason}`, TextCtor);
+  }
+  if (expanded) {
+    return createText(`Peer note status: ${status}\nNote delivered to coordinator queue.`, TextCtor);
+  }
+  return createText(`Peer note ${status}`, TextCtor);
+}
+
+function renderTeamCreateCall(params, TextCtor = FallbackText) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return createText("pet_team_create", TextCtor);
+  }
+  const name = typeof params.name === "string" && params.name.trim() ? params.name.trim() : "unnamed";
+  const targets = Array.isArray(params.targets) ? params.targets : [];
+  const count = targets.length;
+  return createText(`pet_team_create: "${name}" (${count} member${count === 1 ? "" : "s"})`, TextCtor);
+}
+
+function renderTeamCreateResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "active");
+  const isError = Boolean(result && result.isError) || (status !== "active" && status !== "created");
+  if (isError) {
+    const reason = (d && d.reason) || "Team creation failed";
+    if (expanded) {
+      return createText(`Failed to create team\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to create team: ${reason}`, TextCtor);
+  }
+  const team = d && typeof d.team === "object" ? d.team : null;
+  const name = (team && team.name) || "Team";
+  const rev = (team && team.revision) || 1;
+  const members = Array.isArray(team && team.members) ? team.members : [];
+  if (expanded) {
+    const lines = [
+      `Team: "${name}" (Active, Revision ${rev})`,
+      `Role: ${(team && team.callerRole) || "leader"}`,
+      `Members (${members.length}):`,
+    ];
+    for (const m of members) {
+      lines.push(`  • ${m.displayName || "Pi"} @ ${m.host || "local"} — ${m.role || "member"} (${m.state || "active"})`);
+    }
+    return createText(lines.join("\n"), TextCtor);
+  }
+  return createText(`Team "${name}" created (rev ${rev}, ${members.length} members)`, TextCtor);
+}
+
+function renderTeamStatusCall(params, TextCtor = FallbackText) {
+  return createText("pet_team_status", TextCtor);
+}
+
+function renderTeamStatusResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "none");
+  const isError = Boolean(result && result.isError) || (status !== "active" && status !== "none" && status !== "dissolved");
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to get team status";
+    if (expanded) {
+      return createText(`Failed to get team status\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to get team status: ${reason}`, TextCtor);
+  }
+  if (status === "none" || !d || !d.team) {
+    if (expanded) {
+      return createText("No active team membership for this session.", TextCtor);
+    }
+    return createText("No active team", TextCtor);
+  }
+  const team = d.team;
+  const name = team.name || "Team";
+  const rev = team.revision || 1;
+  const role = team.callerRole || "member";
+  const members = Array.isArray(team.members) ? team.members : [];
+  if (expanded) {
+    const lines = [
+      `Team: "${name}" (Revision ${rev})`,
+      `Your Role: ${role}`,
+      `Members (${members.length}):`,
+    ];
+    for (const m of members) {
+      lines.push(`  • ${m.displayName || "Pi"} @ ${m.host || "local"} — ${m.role || "member"} (${m.state || "active"})`);
+    }
+    return createText(lines.join("\n"), TextCtor);
+  }
+  return createText(`Team: ${name} (${role}) — ${members.length} members (rev ${rev})`, TextCtor);
+}
+
+function renderTeamDissolveCall(params, TextCtor = FallbackText) {
+  return createText("pet_team_dissolve", TextCtor);
+}
+
+function renderTeamDissolveResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "dissolved");
+  const isError = Boolean(result && result.isError) || (status !== "dissolved");
+  if (isError) {
+    const reason = (d && d.reason) || "Team dissolution failed";
+    if (expanded) {
+      return createText(`Failed to dissolve team\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to dissolve team: ${reason}`, TextCtor);
+  }
+  if (expanded) {
+    return createText("Active team has been dissolved successfully.", TextCtor);
+  }
+  return createText("Team dissolved", TextCtor);
+}
+
+function renderBoardReadCall(params, TextCtor = FallbackText) {
+  return createText("pet_board_read", TextCtor);
+}
+
+function renderBoardReadResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "none");
+  const isError = Boolean(result && result.isError) || (status !== "active" && status !== "none");
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to read team board";
+    if (expanded) {
+      return createText(`Failed to read team board\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to read team board: ${reason}`, TextCtor);
+  }
+  if (status === "none" || !d || !d.board) {
+    if (expanded) {
+      return createText("No active team board found for this session.", TextCtor);
+    }
+    return createText("No active team board", TextCtor);
+  }
+  const board = d.board;
+  const rev = typeof board.revision === "number" ? board.revision : 0;
+  const markdown = typeof board.markdown === "string" ? board.markdown : "";
+  const updater = board.updatedBy ? `${board.updatedBy.displayName} (${board.updatedBy.role})` : null;
+  const lines = markdown ? markdown.split("\n").length : 0;
+  const bytes = Buffer.byteLength(markdown, "utf8");
+  if (expanded) {
+    const boundedMd = markdown.length > 8192 ? `${markdown.slice(0, 8192)}\n...[truncated]` : markdown;
+    const header = `Team Board (Revision ${rev}${updater ? `, updated by ${updater}` : ""}):\n---`;
+    return createText(`${header}\n${boundedMd}`, TextCtor);
+  }
+  const updaterStr = updater ? `, by ${updater}` : "";
+  return createText(`Team board (rev ${rev}${updaterStr}): ${lines} line${lines === 1 ? "" : "s"} (${bytes} bytes)`, TextCtor);
+}
+
+function renderBoardWriteCall(params, TextCtor = FallbackText) {
+  if (!params || typeof params !== "object" || Array.isArray(params)) {
+    return createText("pet_board_write", TextCtor);
+  }
+  const baseRev = typeof params.baseRevision === "number" ? params.baseRevision : 0;
+  const bytes = typeof params.markdown === "string" ? Buffer.byteLength(params.markdown, "utf8") : 0;
+  return createText(`pet_board_write (baseRevision: ${baseRev}, ${bytes} bytes)`, TextCtor);
+}
+
+function renderBoardWriteResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "updated");
+  if (status === "conflict") {
+    const currentRev = typeof d.currentRevision === "number" ? d.currentRevision : "unknown";
+    const reason = d.reason || "Revision mismatch";
+    if (expanded) {
+      return createText(
+        `Board Write Conflict:\n` +
+        `Current server revision: ${currentRev}\n` +
+        `Reason: ${reason}\n` +
+        `Please re-read the board (pet_board_read) and merge changes.`,
+        TextCtor
+      );
+    }
+    return createText(`Board update conflict (current rev ${currentRev}): ${reason}`, TextCtor);
+  }
+  const isError = Boolean(result && result.isError) || (status !== "updated");
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to write team board";
+    if (expanded) {
+      return createText(`Failed to write team board\nStatus: ${status}\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to write team board: ${reason}`, TextCtor);
+  }
+  const board = d && typeof d.board === "object" ? d.board : null;
+  const rev = board && typeof board.revision === "number" ? board.revision : "updated";
+  const updater = board && board.updatedBy ? `${board.updatedBy.displayName} (${board.updatedBy.role})` : null;
+  if (expanded) {
+    const updaterLine = updater ? `\nUpdated by: ${updater}` : "";
+    return createText(`Team board updated successfully to revision ${rev}.${updaterLine}`, TextCtor);
+  }
+  return createText(`Team board updated to revision ${rev}`, TextCtor);
+}
+
 
 function setSharedPeerWakeMode(mode, globalObject = globalThis) {
   if (mode !== "off" && mode !== "bounded") return false;
@@ -1654,10 +2195,11 @@ function attachInboxConsumer(pi, options = {}) {
 
 function piPetExtension(pi, dependencies = {}) {
   // Normal Pi discovery loads index.ts, which imports Pi's bundled TypeBox and
-  // injects it here. The CommonJS fallback remains for direct Node consumers
-  // and tests, but production loading must not depend on extension-local
+  // Text and injects them here. The CommonJS fallback remains for direct Node
+  // consumers and tests, but production loading must not depend on extension-local
   // node_modules.
   const Type = dependencies.Type || require("typebox").Type;
+  const TextCtor = dependencies.Text || FallbackText;
   const typeArray = (typeof Type.Array === "function")
     ? Type.Array.bind(Type)
     : (items, opts) => ({ type: "array", items, ...opts });
@@ -1800,42 +2342,48 @@ function piPetExtension(pi, dependencies = {}) {
         state: Type.Optional(Type.String({ maxLength: 120 })),
         host: Type.Optional(Type.String({ maxLength: 120 })),
       }),
+      renderCall(params) {
+        return renderListSessionsCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderListSessionsResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectCatalogForModel);
         }
 
         if (params && typeof params === "object") {
           for (const key of Object.keys(params)) {
             if (key !== "state" && key !== "host") {
-              return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+              return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectCatalogForModel);
             }
           }
           if (params.state !== undefined) {
             if (typeof params.state !== "string" || countCodePoints(params.state) > 120) {
-              return formatPeerResult({ status: "rejected", reason: "state must be a string <= 120 characters" }, true);
+              return formatPeerResult({ status: "rejected", reason: "state must be a string <= 120 characters" }, true, projectCatalogForModel);
             }
           }
           if (params.host !== undefined) {
             if (typeof params.host !== "string" || countCodePoints(params.host) > 120) {
-              return formatPeerResult({ status: "rejected", reason: "host must be a string <= 120 characters" }, true);
+              return formatPeerResult({ status: "rejected", reason: "host must be a string <= 120 characters" }, true, projectCatalogForModel);
             }
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectCatalogForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectCatalogForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectCatalogForModel);
         }
 
         const body = {
@@ -1855,12 +2403,12 @@ function piPetExtension(pi, dependencies = {}) {
 
         if (!res.ok || res.status !== 200) {
           const errorDetails = sanitizeSendDetails(res.data, res.reason || `HTTP ${res.status}`);
-          return formatPeerResult(errorDetails, true);
+          return formatPeerResult(errorDetails, true, projectCatalogForModel);
         }
 
         const data = res.data;
         if (!data || typeof data !== "object" || Array.isArray(data) || data.kind !== "peer_catalog" || !Array.isArray(data.sessions)) {
-          return formatPeerResult({ status: "failed", reason: "Invalid catalog response structure" }, true);
+          return formatPeerResult({ status: "failed", reason: "Invalid catalog response structure" }, true, projectCatalogForModel);
         }
 
         const projectedSessions = [];
@@ -1877,7 +2425,7 @@ function piPetExtension(pi, dependencies = {}) {
           sessions: projectedSessions,
         };
 
-        return formatPeerResult(details, false);
+        return formatPeerResult(details, false, projectCatalogForModel);
       },
     });
 
@@ -1897,45 +2445,51 @@ function piPetExtension(pi, dependencies = {}) {
         target: Type.String({ minLength: 1, maxLength: 128 }),
         text: Type.String({ minLength: 1, maxLength: 2000 }),
       }),
+      renderCall(params) {
+        return renderSendCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderSendResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (!params || typeof params !== "object" || Array.isArray(params)) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectSendForModel);
         }
 
         for (const key of Object.keys(params)) {
           if (key !== "target" && key !== "text") {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectSendForModel);
           }
         }
 
         const { target, text } = params;
 
         if (typeof target !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(target)) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true, projectSendForModel);
         }
 
         if (typeof text !== "string") {
-          return formatPeerResult({ status: "rejected", reason: "text must be a string" }, true);
+          return formatPeerResult({ status: "rejected", reason: "text must be a string" }, true, projectSendForModel);
         }
 
         const cpLen = countCodePoints(text);
         if (cpLen < 1 || cpLen > 2000) {
-          return formatPeerResult({ status: "rejected", reason: "text length must be between 1 and 2000 Unicode code points" }, true);
+          return formatPeerResult({ status: "rejected", reason: "text length must be between 1 and 2000 Unicode code points" }, true, projectSendForModel);
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectSendForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectSendForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectSendForModel);
         }
 
         const body = {
@@ -1957,7 +2511,7 @@ function piPetExtension(pi, dependencies = {}) {
         const isSuccessStatus = sanitized.status === "queued" || sanitized.status === "dispatched";
         const isError = !(isSuccessHttp && isSuccessStatus);
 
-        return formatPeerResult(sanitized, isError);
+        return formatPeerResult(sanitized, isError, projectSendForModel);
       },
     });
 
@@ -1973,30 +2527,36 @@ function piPetExtension(pi, dependencies = {}) {
         "Teammate handles (psh_...) are refreshed in the response for direct messaging with pet_send.",
       ],
       parameters: Type.Object({}),
+      renderCall(params) {
+        return renderTeamStatusCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderTeamStatusResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectTeamStatusForModel);
         }
 
         if (params && typeof params === "object") {
           for (const key of Object.keys(params)) {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectTeamStatusForModel);
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectTeamStatusForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectTeamStatusForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectTeamStatusForModel);
         }
 
         const body = {
@@ -2009,11 +2569,11 @@ function piPetExtension(pi, dependencies = {}) {
         const res = await postPeerJson(config, "/pet-team/status", body, signal);
         if (!res.ok || res.status !== 200) {
           const errorDetails = sanitizeTeamDetails(res.data, res.reason || `HTTP ${res.status}`);
-          return formatPeerResult(errorDetails, true);
+          return formatPeerResult(errorDetails, true, projectTeamStatusForModel);
         }
 
         const sanitized = sanitizeTeamDetails(res.data);
-        return formatPeerResult(sanitized, false);
+        return formatPeerResult(sanitized, false, projectTeamStatusForModel);
       },
     });
 
@@ -2035,62 +2595,68 @@ function piPetExtension(pi, dependencies = {}) {
         name: Type.String({ minLength: 1, maxLength: 80 }),
         targets: typeArray(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 7 }),
       }),
+      renderCall(params) {
+        return renderTeamCreateCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderTeamCreateResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (!params || typeof params !== "object" || Array.isArray(params)) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectTeamCreateForModel);
         }
 
         for (const key of Object.keys(params)) {
           if (key !== "name" && key !== "targets") {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectTeamCreateForModel);
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectTeamCreateForModel);
         }
 
         if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
           return formatPeerResult({
             status: "rejected",
             reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
-          }, true);
+          }, true, projectTeamCreateForModel);
         }
 
         const { name, targets } = params;
         if (typeof name !== "string") {
-          return formatPeerResult({ status: "rejected", reason: "name must be a string" }, true);
+          return formatPeerResult({ status: "rejected", reason: "name must be a string" }, true, projectTeamCreateForModel);
         }
 
         const trimmedName = name.trim();
         const cpLen = countCodePoints(trimmedName);
         if (cpLen < 1 || cpLen > 80 || /[\u0000-\u001F\u007F-\u009F]/.test(name)) {
-          return formatPeerResult({ status: "rejected", reason: "name length must be between 1 and 80 characters without control characters" }, true);
+          return formatPeerResult({ status: "rejected", reason: "name length must be between 1 and 80 characters without control characters" }, true, projectTeamCreateForModel);
         }
 
         if (!Array.isArray(targets) || targets.length < 1 || targets.length > 7) {
-          return formatPeerResult({ status: "rejected", reason: "targets must be an array of 1 to 7 session handles" }, true);
+          return formatPeerResult({ status: "rejected", reason: "targets must be an array of 1 to 7 session handles" }, true, projectTeamCreateForModel);
         }
 
         for (const t of targets) {
           if (typeof t !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(t)) {
-            return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true);
+            return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true, projectTeamCreateForModel);
           }
         }
 
         if (new Set(targets).size !== targets.length) {
-          return formatPeerResult({ status: "rejected", reason: "Duplicate target handles in targets array" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Duplicate target handles in targets array" }, true, projectTeamCreateForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectTeamCreateForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectTeamCreateForModel);
         }
 
         const body = {
@@ -2108,7 +2674,7 @@ function piPetExtension(pi, dependencies = {}) {
         const isSuccessStatus = sanitized.status === "active" || sanitized.status === "created";
         const isError = !(isSuccessHttp && isSuccessStatus);
 
-        return formatPeerResult(sanitized, isError);
+        return formatPeerResult(sanitized, isError, projectTeamCreateForModel);
       },
     });
 
@@ -2124,37 +2690,43 @@ function piPetExtension(pi, dependencies = {}) {
         "Caller must be the leader of its active team.",
       ],
       parameters: Type.Object({}),
+      renderCall(params) {
+        return renderTeamDissolveCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderTeamDissolveResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectTeamDissolveForModel);
         }
 
         if (params && typeof params === "object") {
           for (const key of Object.keys(params)) {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectTeamDissolveForModel);
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectTeamDissolveForModel);
         }
 
         if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
           return formatPeerResult({
             status: "rejected",
             reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
-          }, true);
+          }, true, projectTeamDissolveForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectTeamDissolveForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectTeamDissolveForModel);
         }
 
         const body = {
@@ -2170,7 +2742,7 @@ function piPetExtension(pi, dependencies = {}) {
         const isSuccessStatus = sanitized.status === "dissolved";
         const isError = !(isSuccessHttp && isSuccessStatus);
 
-        return formatPeerResult(sanitized, isError);
+        return formatPeerResult(sanitized, isError, projectTeamDissolveForModel);
       },
     });
 
@@ -2188,30 +2760,36 @@ function piPetExtension(pi, dependencies = {}) {
         "Board write never automatically sends messages or wakes peers.",
       ],
       parameters: Type.Object({}),
+      renderCall(params) {
+        return renderBoardReadCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderBoardReadResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectBoardReadForModel);
         }
 
         if (params && typeof params === "object") {
           for (const key of Object.keys(params)) {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectBoardReadForModel);
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectBoardReadForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectBoardReadForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectBoardReadForModel);
         }
 
         const body = {
@@ -2227,7 +2805,7 @@ function piPetExtension(pi, dependencies = {}) {
         const isSuccessStatus = sanitized.status === "active" || sanitized.status === "none";
         const isError = !(isSuccessHttp && isSuccessStatus);
 
-        return formatPeerResult(sanitized, isError);
+        return formatPeerResult(sanitized, isError, projectBoardReadForModel);
       },
     });
 
@@ -2249,55 +2827,61 @@ function piPetExtension(pi, dependencies = {}) {
         baseRevision: typeInteger({ minimum: 0 }),
         markdown: Type.String({ maxLength: 8192 }),
       }),
+      renderCall(params) {
+        return renderBoardWriteCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderBoardWriteResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         if (!params || typeof params !== "object" || Array.isArray(params)) {
-          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true, projectBoardWriteForModel);
         }
 
         for (const key of Object.keys(params)) {
           if (key !== "baseRevision" && key !== "markdown") {
-            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectBoardWriteForModel);
           }
         }
 
         const rawSessionId = getCanonicalSessionId(ctx, pi);
         if (!rawSessionId) {
-          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true, projectBoardWriteForModel);
         }
 
         if (!boardWriteState.isEnabledFor(rawSessionId)) {
           return formatPeerResult({
             status: "rejected",
             reason: "Team board write is disabled for this session. Enable it with /pet-board-write on",
-          }, true);
+          }, true, projectBoardWriteForModel);
         }
 
         const { baseRevision, markdown } = params;
 
         if (typeof baseRevision !== "number" || !Number.isSafeInteger(baseRevision) || baseRevision < 0) {
-          return formatPeerResult({ status: "rejected", reason: "baseRevision must be a non-negative safe integer" }, true);
+          return formatPeerResult({ status: "rejected", reason: "baseRevision must be a non-negative safe integer" }, true, projectBoardWriteForModel);
         }
 
         if (typeof markdown !== "string") {
-          return formatPeerResult({ status: "rejected", reason: "markdown must be a string" }, true);
+          return formatPeerResult({ status: "rejected", reason: "markdown must be a string" }, true, projectBoardWriteForModel);
         }
 
         if (Buffer.byteLength(markdown, "utf8") > 8192) {
-          return formatPeerResult({ status: "rejected", reason: "markdown byte length exceeds maximum 8192 UTF-8 bytes" }, true);
+          return formatPeerResult({ status: "rejected", reason: "markdown byte length exceeds maximum 8192 UTF-8 bytes" }, true, projectBoardWriteForModel);
         }
 
         if (DISALLOWED_BOARD_CONTROL_RE.test(markdown)) {
-          return formatPeerResult({ status: "rejected", reason: "markdown contains disallowed control characters" }, true);
+          return formatPeerResult({ status: "rejected", reason: "markdown contains disallowed control characters" }, true, projectBoardWriteForModel);
         }
 
         const capabilityToken = readPeerCapabilityToken();
         if (!capabilityToken) {
-          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectBoardWriteForModel);
         }
 
         const config = resolvePeerTransportConfig();
         if (!config) {
-          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectBoardWriteForModel);
         }
 
         const body = {
@@ -2315,7 +2899,7 @@ function piPetExtension(pi, dependencies = {}) {
         const isSuccessStatus = sanitized.status === "updated";
         const isError = !(isSuccessHttp && isSuccessStatus);
 
-        return formatPeerResult(sanitized, isError);
+        return formatPeerResult(sanitized, isError, projectBoardWriteForModel);
       },
     });
 
@@ -2343,6 +2927,12 @@ function piPetExtension(pi, dependencies = {}) {
           ])
         ),
       }),
+      renderCall(params) {
+        return renderExpressCall(params, TextCtor);
+      },
+      renderResult(result, options) {
+        return renderExpressResult(result, options, TextCtor);
+      },
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         const interaction = loadInteraction();
         const rawSessionId = readSessionId(ctx);
@@ -2482,3 +3072,31 @@ module.exports.sanitizeBoardObject = sanitizeBoardObject;
 module.exports.sanitizeBoardDetails = sanitizeBoardDetails;
 module.exports.createInboxConsumer = createInboxConsumer;
 module.exports.attachInboxConsumer = attachInboxConsumer;
+module.exports.FallbackText = FallbackText;
+module.exports.createText = createText;
+module.exports.extractResultDetails = extractResultDetails;
+module.exports.formatToolResult = formatToolResult;
+module.exports.projectExpressForModel = projectExpressForModel;
+module.exports.projectCatalogForModel = projectCatalogForModel;
+module.exports.projectSendForModel = projectSendForModel;
+module.exports.projectTeamStatusForModel = projectTeamStatusForModel;
+module.exports.projectTeamCreateForModel = projectTeamCreateForModel;
+module.exports.projectTeamDissolveForModel = projectTeamDissolveForModel;
+module.exports.projectBoardReadForModel = projectBoardReadForModel;
+module.exports.projectBoardWriteForModel = projectBoardWriteForModel;
+module.exports.renderExpressCall = renderExpressCall;
+module.exports.renderExpressResult = renderExpressResult;
+module.exports.renderListSessionsCall = renderListSessionsCall;
+module.exports.renderListSessionsResult = renderListSessionsResult;
+module.exports.renderSendCall = renderSendCall;
+module.exports.renderSendResult = renderSendResult;
+module.exports.renderTeamCreateCall = renderTeamCreateCall;
+module.exports.renderTeamCreateResult = renderTeamCreateResult;
+module.exports.renderTeamStatusCall = renderTeamStatusCall;
+module.exports.renderTeamStatusResult = renderTeamStatusResult;
+module.exports.renderTeamDissolveCall = renderTeamDissolveCall;
+module.exports.renderTeamDissolveResult = renderTeamDissolveResult;
+module.exports.renderBoardReadCall = renderBoardReadCall;
+module.exports.renderBoardReadResult = renderBoardReadResult;
+module.exports.renderBoardWriteCall = renderBoardWriteCall;
+module.exports.renderBoardWriteResult = renderBoardWriteResult;

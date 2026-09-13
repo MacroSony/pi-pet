@@ -44,6 +44,16 @@ At least one required. Returns `{ status, reason? }` — `delivered` means the e
 receipt were atomically persisted (write-ack; renderer playback confirmation is deferred).
 Missing animation assets are skipped by the renderer, but text always displays.
 
+### Tool result presentation
+
+Coordinator wire responses remain complete for validation and debugging, but the model-visible
+`content` is projected down to fields needed for the next action. Opaque `psh_` handles remain
+available to the model only where routing requires them (`pet_list_sessions` and messageable
+Team members); envelope IDs, timestamps, fixed capability fields and redundant write echoes are
+omitted. All eight tools provide custom TUI renderers, so human collapsed/expanded views show
+named summaries rather than protocol JSON and never display raw handles, internal IDs, paths or
+tokens. `pet_board_read` may show the bounded Markdown document when expanded.
+
 ## Remote Delivery Mode
 
 When Pi runs on a remote host (e.g., inside an SSH session or container) and the desktop pet
@@ -135,6 +145,12 @@ The extension automatically attaches an inbox consumer loop when Pi initializes 
 ## Peer Messaging and Lean Wake PoC
 
 `pet_list_sessions` returns sanitized, opaque short-lived handles. `pet_send` sends an explicitly attributed custom peer note; it never impersonates user input. User inbox claims remain higher priority than peer claims.
+
+Pi's native `/name <title>` is forwarded as the preferred session display title. When multiple
+active human-visible sessions on the same host still resolve to the same title (commonly because
+they share a cwd), Clawd appends a deterministic collision-only short tag such as `#A1B2`.
+Unique titles and same titles on different hosts remain unsuffixed. Clearing the native Pi name
+restores the normal cwd/session fallback.
 
 Peer delivery is passive by default:
 

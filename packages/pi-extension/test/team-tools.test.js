@@ -450,9 +450,16 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
     assert.equal(statusJson.includes("pi:secret_raw_worker"), false);
     assert.equal(statusJson.includes(VALID_TOKEN), false);
 
+    assert.equal(statusResult.details.schemaVersion, "1");
+    assert.equal(statusResult.details.kind, "team_status");
+    assert.equal(statusResult.details.status, "active");
+    assert.equal(statusResult.details.team.name, "Alpha Squad");
+    assert.equal(statusResult.details.team.members.length, 2);
+    assert.equal(statusResult.details.team.members[1].handle, "psh_fresh_worker_handle_123");
+
     const statusParsed = JSON.parse(statusJson);
-    assert.equal(statusParsed.schemaVersion, "1");
-    assert.equal(statusParsed.kind, "team_status");
+    assert.equal(statusParsed.schemaVersion, undefined);
+    assert.equal(statusParsed.kind, undefined);
     assert.equal(statusParsed.status, "active");
     assert.equal(statusParsed.team.name, "Alpha Squad");
     assert.equal(statusParsed.team.members.length, 2);
@@ -959,9 +966,14 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     assert.equal(read1Json.includes("secret_team_1"), false);
     assert.equal(read1Json.includes("secret_pet_1"), false);
     assert.equal(read1Json.includes(VALID_TOKEN), false);
+    assert.equal(read1.details.schemaVersion, "1");
+    assert.equal(read1.details.kind, "team_board_read");
+    assert.equal(read1.details.status, "none");
+    assert.equal(read1.details.board, undefined);
+
     const read1Parsed = JSON.parse(read1Json);
-    assert.equal(read1Parsed.schemaVersion, "1");
-    assert.equal(read1Parsed.kind, "team_board_read");
+    assert.equal(read1Parsed.schemaVersion, undefined);
+    assert.equal(read1Parsed.kind, undefined);
     assert.equal(read1Parsed.status, "none");
     assert.equal(read1Parsed.board, undefined);
 
@@ -992,13 +1004,21 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     const write1Json = write1.content[0].text;
     assert.equal(write1Json.includes("secret_team_1"), false);
     assert.equal(write1Json.includes(VALID_TOKEN), false);
+    assert.equal(write1.details.schemaVersion, "1");
+    assert.equal(write1.details.kind, "team_board_write");
+    assert.equal(write1.details.status, "updated");
+    assert.equal(write1.details.board.revision, 1);
+    assert.equal(write1.details.board.markdown, initialMarkdown);
+    assert.equal(write1.details.board.updatedAtMs, 1700000000000);
+    assert.deepEqual(write1.details.board.updatedBy, { displayName: "Pi Writer", role: "member" });
+
     const write1Parsed = JSON.parse(write1Json);
-    assert.equal(write1Parsed.schemaVersion, "1");
-    assert.equal(write1Parsed.kind, "team_board_write");
+    assert.equal(write1Parsed.schemaVersion, undefined);
+    assert.equal(write1Parsed.kind, undefined);
     assert.equal(write1Parsed.status, "updated");
     assert.equal(write1Parsed.board.revision, 1);
-    assert.equal(write1Parsed.board.markdown, initialMarkdown);
-    assert.equal(write1Parsed.board.updatedAtMs, 1700000000000);
+    assert.equal(write1Parsed.board.markdown, undefined);
+    assert.equal(write1Parsed.board.updatedAtMs, undefined);
     assert.deepEqual(write1Parsed.board.updatedBy, { displayName: "Pi Writer", role: "member" });
 
     // ── 3. pet_board_read after write ──
@@ -1031,9 +1051,15 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     assert.equal(writeConflictJson.includes("secret_team_1"), false);
     assert.equal(writeConflictJson.includes("pi:secret_session"), false);
     assert.equal(writeConflictJson.includes(VALID_TOKEN), false);
+    assert.equal(writeConflict.details.schemaVersion, "1");
+    assert.equal(writeConflict.details.kind, "team_board_write");
+    assert.equal(writeConflict.details.status, "conflict");
+    assert.equal(writeConflict.details.currentRevision, 1);
+    assert.equal(writeConflict.details.reason, "Revision mismatch");
+
     const conflictParsed = JSON.parse(writeConflictJson);
-    assert.equal(conflictParsed.schemaVersion, "1");
-    assert.equal(conflictParsed.kind, "team_board_write");
+    assert.equal(conflictParsed.schemaVersion, undefined);
+    assert.equal(conflictParsed.kind, undefined);
     assert.equal(conflictParsed.status, "conflict");
     assert.equal(conflictParsed.currentRevision, 1);
     assert.equal(conflictParsed.reason, "Revision mismatch");

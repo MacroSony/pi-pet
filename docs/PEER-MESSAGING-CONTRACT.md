@@ -64,6 +64,15 @@ Each entry contains exactly:
 
 Forbidden response fields include `petId`, `profileId`, raw/session IDs, absolute `cwd`, PID/HWND/process metadata, transcript, assistant output, provider/model credentials and routing data.
 
+This is the coordinator wire projection. The Pi tool's model-visible result further omits fixed
+`capabilities`, `canMessage`, expiry and envelope metadata while retaining `handle`, display name,
+host and state. Its custom human renderer never prints the raw handle or protocol JSON.
+
+`displayName` prefers an explicit native Pi `/name`. If two active human-visible sessions on the
+same host still collide case-insensitively, the snapshot appends a deterministic collision-only
+short discriminator derived one-way from canonical identity. The discriminator is presentation
+only, is not accepted as a routing target, and exposes no raw session or pet identity.
+
 Catalog handles:
 
 - are random, memory-only and expire after 5 minutes;

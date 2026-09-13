@@ -2,6 +2,14 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-13 — M3c.0 clean tool output and distinct-session automation complete
+
+- Preserved full coordinator wire contracts while reducing model-visible Pi Pet tool results to operational fields. Catalog and active Team projections retain opaque handles only where the Agent needs them for routing; expression/send receipts, envelope IDs, timestamps, fixed capabilities and redundant Board write echoes no longer consume model context.
+- Added custom human `renderCall` / `renderResult` for all eight Pi Pet tools. Collapsed and expanded TUI views show concise named summaries and never render raw `psh_` handles, internal IDs, paths, tokens, timestamps or protocol JSON; expanded Board read may show its bounded Markdown.
+- Pi's native `/name` now flows through the managed extension using bounded `session_title` metadata. `session_info_changed` sends a metadata-only refresh, and explicit native-name clearing restores the cwd/id fallback without changing lifecycle state or recent events.
+- Active human-visible sessions with a case-insensitive duplicate title on the same host now receive deterministic collision-only suffixes such as `Assistant #A1B2`. Unique names and same names on different hosts remain uncluttered; sleeping, headless and hidden sessions do not create collision noise.
+- Verification passed: root **320/320**; focused Clawd naming/state/route/managed-extension/peer/Team regression **638/638**; independent review found no blocker. Windows TUI and duplicate-session live smoke remain before release acceptance.
+
 ## 2026-09-12 — Milestone 2 local and Secure Remote SSH peer messaging accepted
 
 - Froze and implemented the M2 peer contract: caller-scoped opaque catalog/reply handles, capability-generation binding, provenance, TTL, dedup, source rate limit, `maxHops=1`, user-first scheduling, separate peer inboxes and conservative receipts.

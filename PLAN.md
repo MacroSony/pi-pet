@@ -119,7 +119,7 @@ Tauri input
 
 ### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-Lean peer wake decision gate 已通过真实 Windows → Homelab → Windows 两次自动 turn：receiver opt-in、`triggerTurn:true`、single-use hop 0 reply handle、hop 1 无 reply budget和 user-first 主链均成立。M3a.2-lite autonomous Team 也已完成跨机闭环；当前进入 M3b-lite Board，不恢复旧版完整 Team ACL 平台。
+Lean peer wake decision gate、M3a.2-lite autonomous Team 与 M3b-lite Board 均已通过真实 Windows ↔ Homelab 闭环。当前进入 M3c presentation：先降低 Agent tool 输出噪音并消除同 cwd session 撞名，再做可见 Team、白板、双击聊天与显式 gathering scene；不恢复旧版完整 Team ACL 平台。
 
 #### M3a.2-lite — Agent 自主拉群（完成）
 
@@ -146,6 +146,16 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - 当前 whole-document write 是刻意的 PoC 简化；不声称满足下方完整结构化 Board contract。
 
 真实 Windows leader 与 Homelab member 已完成 revision 0→1→2 跨机读写、最近作者 attribution、stale revision 0 冲突拒绝和拒绝后内容完整性复查。M3b-lite 真机 gate 通过；完整结构化 Board 继续 parked，直到真实使用暴露 whole-document 模型的具体痛点。
+
+#### M3c.0 — Clean Tools 与可区分 Session（已实现 / 待 Windows 真机）
+
+- coordinator wire contract 保持完整；Agent-facing content 仅保留实际操作所需字段，删除 envelope、receipt IDs、timestamps、固定 capability 与 write echo 噪音。
+- `psh_` 仍只在 Agent 必须继续路由的 catalog / Team member projection 中保留；Pi TUI 的 custom `renderCall` / `renderResult` 对用户隐藏 handle 和内部 JSON，显示名称化摘要。
+- Pi managed extension 读取原生 `/name` session title；`session_info_changed` 用 metadata-only state update 即时传播，清空名称后恢复 cwd/id fallback，不制造生命周期事件。
+- 同 host 的 active、human-visible session 若显示名大小写不敏感地撞名，只给冲突组追加由 canonical identity 单向派生的稳定短标签（如 `Assistant #A1B2`）；不同 host、唯一名称、sleeping/headless/hidden session 不产生多余后缀。
+- raw session ID、pet ID、cwd、token 和完整 handle 不进入人类 renderer；重连顺序不影响短标签。
+
+下一步 M3c.1 先提供 Team badge 与独立只读白板窗口，作为后续 semantic gathering 的视觉锚点。双击 pet chat 只记录 pet-originated user message 与 assistant 最终 text；完整 transcript/thinking/tool payload 不进入聊天记录。
 
 #### Parked：完整 Team ACL 与 Structured Board
 
@@ -288,9 +298,11 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 5. 真实 Windows/Homelab autonomous create/status/send/dissolve smoke。（完成）
 6. M3b-lite Board：Team-scoped revisioned Markdown、session-local write opt-in、read/write tools、OCC 与 attribution。（完成）
 7. 真实 Windows/Homelab read/write/conflict/content-integrity smoke。（完成；structured Board 继续 parked）
-8. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。（当前）
-9. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。
-10. 实现 OpenCode adapter。
-11. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
-12. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
-13. 最后再考虑 Claude、Codex、复杂社交和自由白板。
+8. M3c.0 Clean Tools + distinct sessions：低噪音 model projection、custom TUI renderer、Pi `/name` 与同 host 撞名短标签。（已实现；自动化通过，待 Windows 真机）
+9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（下一步）
+10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。
+11. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。
+12. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
+13. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
+14. 实现 OpenCode adapter；探索 DSH 公开 plugin seam，不满足边界则维持部分 capability。
+15. 空闲时做中立 ChildActivity 小猫；最后再考虑 Claude、Codex、复杂社交和自由白板。
