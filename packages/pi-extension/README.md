@@ -6,6 +6,7 @@ Contracts:
 - Agent Expressions: [`docs/drafts/phase-a-interaction-contract.md`](../../docs/drafts/phase-a-interaction-contract.md)
 - User Inbox v1: [`docs/PI-INBOX-CONTRACT.md`](../../docs/PI-INBOX-CONTRACT.md)
 - Peer Messaging v1: [`docs/PEER-MESSAGING-CONTRACT.md`](../../docs/PEER-MESSAGING-CONTRACT.md)
+- Pet Chat v1: [`docs/PET-CHAT-CONTRACT.md`](../../docs/PET-CHAT-CONTRACT.md)
 
 The agent never supplies petId/commandId/TTL/timestamps — this extension attaches them
 from its own session context (`ctx.sessionManager.getSessionId()`), and the neutral
@@ -142,9 +143,22 @@ The extension automatically attaches an inbox consumer loop when Pi initializes 
        expandPromptTemplates: false,
      });
      ```
+   - Registers the command with the Pet Chat tracker before invoking `pi.sendUserMessage`, because Pi may synchronously emit `input` before the void-returning API call returns.
    - On successful invocation, settles receipt to `status: "dispatched"`.
-   - On synchronous exception, catches error, settles receipt to `status: "failed"`, and resumes loop without crashing the Pi process.
+   - On synchronous exception, removes the tracker candidate, settles receipt to `status: "failed"`, and resumes loop without crashing the Pi process.
    - Claimed messages are never requeued (at-most-once delivery). Stale claims older than 60s are swept to terminal `failed` (`delivery-unknown`).
+
+## Bounded Pet Chat Correlation
+
+Clawd records the user half of an accepted desktop-pet message in its canonical per-pet store. This extension supplies only the reliably associated final assistant half:
+
+1. An exact `input` with `source === "extension"` marks a pre-registered inbox dispatch as observed, but does not activate it.
+2. The real Pi user `message_end` activates the candidate only when text, queue order, timestamp and session identity agree.
+3. Assistant `message_end` accepts only `type: "text"` blocks. Thinking, tool calls/results, peer custom messages, errors and aborts are discarded.
+4. A later user message finalizes the previous clean candidate before starting a queued follow-up; a clean `agent_end` finalizes the last turn.
+5. Session start/shutdown/reload clears ephemeral tracking. Completion transport failure is swallowed and never changes the already-terminal inbox receipt or re-dispatches input.
+
+Assistant completion is control-sanitized and bounded to 8192 UTF-8 bytes. The authenticated completion uses the existing attach-scoped peer capability and `/pet-chat/complete`; the caller never supplies a pet ID. Chat read/clear are local-desktop-only coordinator operations and are not Agent tools.
 
 ## Peer Messaging and Lean Wake PoC
 

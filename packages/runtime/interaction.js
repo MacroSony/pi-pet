@@ -40,6 +40,16 @@ const {
   settlePeerMessage: coreSettlePeerMessage,
 } = require("./peer-inbox");
 
+const {
+  MAX_ASSISTANT_TEXT_BYTES,
+  MAX_CHAT_FILE_BYTES,
+  MAX_CHAT_TURNS,
+  MAX_USER_TEXT_CODE_POINTS,
+  createPetChatStore,
+  sanitizeAssistantText,
+  truncateUtf8Bytes,
+} = require("./pet-chat-store");
+
 const DEFAULT_TTL_MS = 30000;
 const MIN_TTL_MS = 1000;
 const MAX_TTL_MS = 300000;
@@ -489,6 +499,7 @@ module.exports = {
   atomicWriteJson,
   claimNextPeerMessage,
   claimNextUserMessage,
+  createPetChatStore,
   derivePetId,
   enqueuePeerMessage,
   enqueueUserMessage,
@@ -499,4 +510,10 @@ module.exports = {
   settlePeerMessage,
   settleUserMessage,
   validateExpression,
+  MAX_ASSISTANT_TEXT_BYTES,
+  MAX_CHAT_FILE_BYTES,
+  MAX_CHAT_TURNS,
+  MAX_USER_TEXT_CODE_POINTS,
+  sanitizeAssistantText,
+  truncateUtf8Bytes,
 };

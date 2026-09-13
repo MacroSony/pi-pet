@@ -6,6 +6,7 @@ const contract = require("./contract");
 const interaction = require("./interaction");
 const teamStore = require("./team-store");
 const teamBoardStore = require("./team-board-store");
+const petChatStore = require("./pet-chat-store");
 
 // Explicit named factories distinguish the neutral core from its adapter.
-module.exports = { ...runtime, ...contract, ...clawd, ...interaction, ...teamStore, ...teamBoardStore };
+module.exports = { ...runtime, ...contract, ...clawd, ...interaction, ...teamStore, ...teamBoardStore, ...petChatStore };

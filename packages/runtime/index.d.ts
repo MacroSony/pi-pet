@@ -540,3 +540,106 @@ export interface TeamBoardStore {
 export declare function createTeamBoardStore(config?: TeamBoardStoreConfig): TeamBoardStore;
 
 export declare const MAX_BOARD_MARKDOWN_BYTES: 8192;
+
+export interface ChatTurn {
+  commandId: string;
+  userText: string;
+  assistantText: string | null;
+  createdAtMs: number;
+  completedAtMs: number | null;
+}
+
+export interface ChatRecord {
+  schemaVersion: "1";
+  petId: string;
+  revision: number;
+  turns: ChatTurn[];
+  updatedAtMs: number | null;
+}
+
+export interface ReadChatOptions {
+  petId: string;
+}
+
+export interface RecordUserMessageOptions {
+  petId: string;
+  commandId: string;
+  text: string;
+  createdAtMs?: number;
+}
+
+export interface CompleteTurnOptions {
+  petId: string;
+  commandId: string;
+  assistantText: string;
+  completedAtMs?: number;
+}
+
+export interface ClearChatOptions {
+  petId: string;
+}
+
+export interface ChatReadSuccess {
+  ok: true;
+  chat: ChatRecord;
+}
+
+export interface ChatReadError {
+  ok: false;
+  error: string;
+  reason?: string;
+}
+
+export type ChatReadResult = ChatReadSuccess | ChatReadError;
+
+export interface ChatMutationSuccess {
+  ok: true;
+  chat: ChatRecord;
+  idempotent?: boolean;
+}
+
+export interface ChatMutationError {
+  ok: false;
+  error: string;
+  reason?: string;
+}
+
+export type ChatMutationResult = ChatMutationSuccess | ChatMutationError;
+
+export interface ChatClearSuccess {
+  ok: true;
+  cleared: boolean;
+  chat: ChatRecord;
+}
+
+export interface ChatClearError {
+  ok: false;
+  error: string;
+  reason?: string;
+}
+
+export type ChatClearResult = ChatClearSuccess | ChatClearError;
+
+export interface PetChatStoreConfig {
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  fsApi?: unknown;
+  now?: () => number;
+}
+
+export interface PetChatStore {
+  readChat(options: ReadChatOptions): ChatReadResult;
+  recordUserMessage(options: RecordUserMessageOptions): ChatMutationResult;
+  completeTurn(options: CompleteTurnOptions): ChatMutationResult;
+  clearChat(options: ClearChatOptions): ChatClearResult;
+}
+
+export declare function createPetChatStore(config?: PetChatStoreConfig): PetChatStore;
+export declare function sanitizeAssistantText(text: string): string;
+export declare function truncateUtf8Bytes(str: string, maxBytes?: number): string;
+
+export declare const DISALLOWED_CONTROL_RE: RegExp;
+export declare const MAX_CHAT_TURNS: 20;
+export declare const MAX_CHAT_FILE_BYTES: 49152;
+export declare const MAX_USER_TEXT_CODE_POINTS: 2000;
+export declare const MAX_ASSISTANT_TEXT_BYTES: 8192;

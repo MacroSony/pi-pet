@@ -47,6 +47,7 @@ const PEER_ALLOWED_PATHS = new Set([
   "/pet-team/dissolve",
   "/pet-team/board/read",
   "/pet-team/board/write",
+  "/pet-chat/complete",
 ]);
 const PEER_LOCAL_TIMEOUT_MS = 2500;
 const PEER_REMOTE_TIMEOUT_MS = 5000;
@@ -526,6 +527,7 @@ function resolveSessionId(event, ctx, pi) {
       tryExtract(() => ctx.sessionId) ||
       tryExtract(() => ctx.rawSessionId) ||
       tryExtract(() => (typeof ctx.sessionManager?.getSessionId === "function" ? ctx.sessionManager.getSessionId() : null)) ||
+      tryExtract(() => (typeof ctx.getSessionId === "function" ? ctx.getSessionId() : null)) ||
       tryExtract(() => ctx.session?.id);
     if (fromCtx) return fromCtx;
   }
@@ -1622,6 +1624,309 @@ function sanitizeBoardDetails(data, defaultReason = null, defaultKind = "team_bo
   return out;
 }
 
+const CHAT_ASSISTANT_MAX_BYTES = 8192;
+const CHAT_DISALLOWED_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/g;
+
+function extractInputText(event) {
+  if (!event) return null;
+  if (typeof event === "string") return event;
+  if (typeof event.text === "string") return event.text;
+  if (typeof event.input === "string") return event.input;
+  if (event.input && typeof event.input.text === "string") return event.input.text;
+  if (typeof event.message === "string") return event.message;
+  if (typeof event.prompt === "string") return event.prompt;
+  if (typeof event.content === "string") return event.content;
+  if (Array.isArray(event.content)) {
+    const parts = event.content
+      .filter((part) => part && typeof part === "object" && part.type === "text" && typeof part.text === "string")
+      .map((part) => part.text);
+    return parts.length > 0 ? parts.join("\n") : null;
+  }
+  return null;
+}
+
+function sanitizeChatAssistantText(text) {
+  if (typeof text !== "string") return null;
+  const cleaned = text.replace(CHAT_DISALLOWED_CONTROL_RE, "").trim();
+  if (!cleaned) return null;
+  if (Buffer.byteLength(cleaned, "utf8") <= CHAT_ASSISTANT_MAX_BYTES) return cleaned;
+
+  let bytes = 0;
+  let bounded = "";
+  for (const character of cleaned) {
+    const nextBytes = Buffer.byteLength(character, "utf8");
+    if (bytes + nextBytes > CHAT_ASSISTANT_MAX_BYTES) break;
+    bounded += character;
+    bytes += nextBytes;
+  }
+  return bounded || null;
+}
+
+function extractAssistantText(msg) {
+  if (!msg) return null;
+  if (typeof msg.content === "string") {
+    return sanitizeChatAssistantText(msg.content);
+  }
+  if (Array.isArray(msg.content)) {
+    const parts = [];
+    for (const part of msg.content) {
+      if (part && typeof part === "object" && part.type === "text" && typeof part.text === "string") {
+        const text = part.text.trim();
+        if (text) parts.push(text);
+      }
+    }
+    return sanitizeChatAssistantText(parts.join("\n"));
+  }
+  if (typeof msg.text === "string") {
+    return sanitizeChatAssistantText(msg.text);
+  }
+  return null;
+}
+
+function createChatTurnTracker(options = {}) {
+  const nowFn = typeof options.now === "function" ? options.now : Date.now;
+  const env = options.env || process.env;
+  const onCompleteCallback = typeof options.onComplete === "function" ? options.onComplete : null;
+  const maxPending = typeof options.maxPending === "number" ? options.maxPending : 32;
+
+  let pendingDispatches = [];
+  let activeCandidate = null;
+
+  function prunePending() {
+    const cutoff = nowFn() - 300000; // 5 min for dispatches Pi never observed
+    pendingDispatches = pendingDispatches.filter((pending) => (
+      pending.observed || pending.dispatchedAtMs >= cutoff
+    ));
+
+    // Once Pi emitted `input`, it owns that queued turn and may legitimately
+    // keep it behind a long-running tool for more than five minutes. Never age
+    // an observed origin out; bound only the still-unobserved candidates.
+    let excess = pendingDispatches.length - maxPending;
+    if (excess > 0) {
+      pendingDispatches = pendingDispatches.filter((pending) => {
+        if (excess > 0 && !pending.observed) {
+          excess -= 1;
+          return false;
+        }
+        return true;
+      });
+    }
+  }
+
+  function noteInboxDispatched({ petId, commandId, text, rawSessionId, dispatchedAtMs }) {
+    if (!commandId || typeof text !== "string") return;
+    const record = {
+      petId: petId || null,
+      commandId,
+      text,
+      rawSessionId: rawSessionId || null,
+      dispatchedAtMs: (typeof dispatchedAtMs === "number" && Number.isSafeInteger(dispatchedAtMs)) ? dispatchedAtMs : nowFn(),
+      observed: false,
+      observedAtMs: null,
+    };
+    prunePending();
+    pendingDispatches = pendingDispatches.filter((pending) => pending.commandId !== commandId);
+    pendingDispatches.push(record);
+  }
+
+  function discardInboxDispatch(commandId) {
+    if (typeof commandId !== "string" || !commandId) return;
+    pendingDispatches = pendingDispatches.filter((pending) => pending.commandId !== commandId);
+  }
+
+  function finalizeCandidate(candidate) {
+    if (!candidate || !candidate.latestAssistantText || candidate.status !== "active") {
+      return;
+    }
+
+    const completedAtMs = nowFn();
+    const completionData = {
+      petId: candidate.petId,
+      commandId: candidate.commandId,
+      assistantText: candidate.latestAssistantText,
+      completedAtMs,
+      rawSessionId: candidate.rawSessionId,
+    };
+
+    // Post authenticated /pet-chat/complete via existing peer transport/capability
+    try {
+      const capabilityToken = readPeerCapabilityToken();
+      const config = resolvePeerTransportConfig(env);
+      if (capabilityToken && config) {
+        const body = {
+          schemaVersion: "1",
+          kind: "pet_chat_complete",
+          rawSessionId: candidate.rawSessionId,
+          capabilityToken,
+          commandId: candidate.commandId,
+          assistantText: candidate.latestAssistantText,
+        };
+        postPeerJson(config, "/pet-chat/complete", body).catch(() => {});
+      }
+    } catch {
+      // Failures must never crash or affect inbox receipts
+    }
+
+    // Local completion callback
+    if (onCompleteCallback) {
+      try {
+        onCompleteCallback(completionData);
+      } catch {
+        // Callback error must never crash
+      }
+    }
+  }
+
+  function handleInput(event, ctx) {
+    if (!event || typeof event !== "object") return;
+    // handleInput only observes/classifies source==='extension' exact pending dispatch (never interactive/rpc)
+    if (event.source !== "extension") {
+      return;
+    }
+
+    const text = extractInputText(event);
+    if (typeof text !== "string") return;
+
+    prunePending();
+
+    const canonicalSession = resolveSessionId(event, ctx);
+
+    // Find first unobserved pending dispatch matching exact text and session
+    const match = pendingDispatches.find((p) => {
+      if (p.observed) return false;
+      if (p.text !== text) return false;
+      if (canonicalSession && p.rawSessionId && canonicalizePiSessionId(p.rawSessionId) !== canonicalSession) {
+        return false;
+      }
+      return true;
+    });
+
+    if (match) {
+      match.observed = true;
+      match.observedAtMs = nowFn();
+    }
+  }
+
+  function handleMessageEnd(event, ctx) {
+    const msg = (event && event.message) || event;
+    if (!msg || typeof msg !== "object") return;
+
+    const role = msg.role;
+
+    if (role === "user") {
+      // 1. Finalize prior active candidate if any
+      if (activeCandidate) {
+        if (activeCandidate.status === "active" && activeCandidate.latestAssistantText) {
+          finalizeCandidate(activeCandidate);
+        }
+        activeCandidate = null;
+      }
+
+      prunePending();
+
+      const userText = extractInputText(msg) || extractInputText(event);
+      if (typeof userText !== "string") {
+        activeCandidate = null;
+        return;
+      }
+
+      const msgTimestamp =
+        (typeof msg.timestamp === "number" && Number.isSafeInteger(msg.timestamp))
+          ? msg.timestamp
+          : ((typeof event.timestamp === "number" && Number.isSafeInteger(event.timestamp))
+              ? event.timestamp
+              : nowFn());
+
+      const canonicalSession = resolveSessionId(event, ctx);
+
+      // Match an observed pet origin by exact text plus message timestamp >= dispatch time
+      const matchIndex = pendingDispatches.findIndex((p) => {
+        if (!p.observed) return false;
+        if (p.text !== userText) return false;
+        if (msgTimestamp < p.dispatchedAtMs) return false;
+        if (canonicalSession && p.rawSessionId && canonicalizePiSessionId(p.rawSessionId) !== canonicalSession) {
+          return false;
+        }
+        return true;
+      });
+
+      if (matchIndex !== -1) {
+        const matched = pendingDispatches.splice(matchIndex, 1)[0];
+        activeCandidate = {
+          petId: matched.petId,
+          commandId: matched.commandId,
+          userText: matched.text,
+          rawSessionId: matched.rawSessionId || (canonicalSession || null),
+          dispatchedAtMs: matched.dispatchedAtMs,
+          startedAtMs: nowFn(),
+          latestAssistantText: null,
+          status: "active",
+        };
+      } else {
+        // Nonpet user clears active
+        activeCandidate = null;
+      }
+      return;
+    }
+
+    // Handle assistant role
+    if (role === "assistant" || (!role && (msg.content || msg.text))) {
+      if (!activeCandidate || activeCandidate.status !== "active") return;
+
+      const stopReason = msg && (msg.stopReason || msg.stop_reason);
+      const isErrorOrAborted = Boolean(
+        (event && (event.error || event.aborted || event.status === "error" || event.status === "aborted")) ||
+        (msg && (msg.error || msg.errorMessage || stopReason === "error" || stopReason === "aborted" || msg.status === "error" || msg.status === "aborted"))
+      );
+
+      if (isErrorOrAborted) {
+        activeCandidate.status = "error";
+        activeCandidate.latestAssistantText = null;
+        return;
+      }
+
+      const text = extractAssistantText(msg);
+      if (text && typeof text === "string" && text.length > 0) {
+        activeCandidate.latestAssistantText = text;
+      }
+    }
+  }
+
+  function handleAgentEnd(event, ctx) {
+    if (!activeCandidate) return;
+
+    const isErrorOrAborted = Boolean(
+      event && (event.error || event.aborted || event.status === "error" || event.status === "aborted")
+    );
+
+    if (isErrorOrAborted || activeCandidate.status === "error") {
+      activeCandidate = null;
+      return;
+    }
+
+    if (activeCandidate.status === "active" && activeCandidate.latestAssistantText) {
+      finalizeCandidate(activeCandidate);
+    }
+    activeCandidate = null;
+  }
+
+  function clear() {
+    pendingDispatches = [];
+    activeCandidate = null;
+  }
+
+  return {
+    noteInboxDispatched,
+    discardInboxDispatch,
+    handleInput,
+    handleMessageEnd,
+    handleAgentEnd,
+    clear,
+    getActiveCandidate: () => (activeCandidate ? { ...activeCandidate } : null),
+    getPendingDispatches: () => [...pendingDispatches],
+  };
+}
+
 function createInboxConsumer(pi, options = {}) {
   const env = options.env || process.env;
   const profileId = (
@@ -1647,6 +1952,7 @@ function createInboxConsumer(pi, options = {}) {
   const setTimeoutFn = options.setTimeout || setTimeout;
   const clearTimeoutFn = options.clearTimeout || clearTimeout;
   const nowFn = typeof options.now === "function" ? options.now : Date.now;
+  const tracker = options.tracker || null;
 
   let active = false;
   let activeTimer = null;
@@ -1840,9 +2146,23 @@ function createInboxConsumer(pi, options = {}) {
         return { hasMore: true, status: "failed", error: new Error(reason) };
       }
 
-      // Invoke pi.sendUserMessage(text, { deliverAs: 'followUp', expandPromptTemplates: false })
-      let dispatchError = null;
+      // Register before invoking Pi: sendUserMessage() returns void through the
+      // extension API and may synchronously emit the `input` event we correlate.
+      if (tracker && typeof tracker.noteInboxDispatched === "function") {
+        try {
+          tracker.noteInboxDispatched({
+            petId,
+            commandId,
+            text,
+            rawSessionId: normalizedSessionId,
+            dispatchedAtMs: currentNowMs,
+          });
+        } catch {
+          // Correlation is best-effort and must not affect inbox delivery.
+        }
+      }
 
+      let dispatchError = null;
       try {
         if (!pi || typeof pi.sendUserMessage !== "function") {
           throw new Error("pi.sendUserMessage is not a function");
@@ -1855,8 +2175,11 @@ function createInboxConsumer(pi, options = {}) {
         dispatchError = err;
       }
 
-      // Settle status: 'dispatched' on successful invocation, 'failed' on synchronous throw
+      // Settle status: 'dispatched' on successful invocation, 'failed' on synchronous throw.
       if (dispatchError) {
+        if (tracker && typeof tracker.discardInboxDispatch === "function") {
+          try { tracker.discardInboxDispatch(commandId); } catch {}
+        }
         try {
           await interaction.settleUserMessage({
             petId,
@@ -2217,6 +2540,11 @@ function attachInboxConsumer(pi, options = {}) {
   }
 
   let activeInboxConsumer = null;
+  const tracker = options.tracker || createChatTurnTracker({
+    env: options.env,
+    now: options.now,
+    onComplete: options.onCompleteChatTurn,
+  });
 
   function stopCurrent() {
     if (activeInboxConsumer) {
@@ -2237,6 +2565,9 @@ function attachInboxConsumer(pi, options = {}) {
     // session start. The reset must run even when the local runtime is absent,
     // because Secure Remote SSH consumption lives in a separate extension.
     stopCurrent();
+    if (tracker && typeof tracker.clear === "function") {
+      try { tracker.clear(); } catch {}
+    }
     const canonicalSessionId = canonicalizePiSessionId(sessionId);
     if (typeof options.onSessionStart === "function") {
       try { options.onSessionStart(canonicalSessionId); } catch {}
@@ -2245,6 +2576,7 @@ function attachInboxConsumer(pi, options = {}) {
 
     const consumer = createInboxConsumer(pi, {
       ...options,
+      tracker,
       sessionId: canonicalSessionId,
     });
     if (consumer) {
@@ -2255,19 +2587,47 @@ function attachInboxConsumer(pi, options = {}) {
 
   function handleSessionShutdown() {
     stopCurrent();
+    if (tracker && typeof tracker.clear === "function") {
+      try { tracker.clear(); } catch {}
+    }
     if (typeof options.onSessionShutdown === "function") {
       try { options.onSessionShutdown(); } catch {}
     }
   }
 
+  function handleInput(event, ctx) {
+    if (tracker && typeof tracker.handleInput === "function") {
+      try { tracker.handleInput(event, ctx); } catch {}
+    }
+  }
+
+  function handleMessageEnd(event, ctx) {
+    if (tracker && typeof tracker.handleMessageEnd === "function") {
+      try { tracker.handleMessageEnd(event, ctx); } catch {}
+    }
+  }
+
+  function handleAgentEnd(event, ctx) {
+    if (tracker && typeof tracker.handleAgentEnd === "function") {
+      try { tracker.handleAgentEnd(event, ctx); } catch {}
+    }
+  }
+
   pi.on("session_start", handleSessionStart);
   pi.on("session_shutdown", handleSessionShutdown);
+  pi.on("input", handleInput);
+  pi.on("message_end", handleMessageEnd);
+  pi.on("agent_end", handleAgentEnd);
 
   return {
     getActiveConsumer: () => activeInboxConsumer,
+    getTracker: () => tracker,
     stop: stopCurrent,
     handleSessionStart,
     handleSessionShutdown,
+    handleInput,
+    handleMessageEnd,
+    handleAgentEnd,
   };
 }
 
@@ -3102,6 +3462,9 @@ module.exports.sanitizeBoardObject = sanitizeBoardObject;
 module.exports.sanitizeBoardDetails = sanitizeBoardDetails;
 module.exports.createInboxConsumer = createInboxConsumer;
 module.exports.attachInboxConsumer = attachInboxConsumer;
+module.exports.createChatTurnTracker = createChatTurnTracker;
+module.exports.extractAssistantText = extractAssistantText;
+module.exports.extractInputText = extractInputText;
 module.exports.FallbackText = FallbackText;
 module.exports.createText = createText;
 module.exports.extractResultDetails = extractResultDetails;

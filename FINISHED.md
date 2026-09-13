@@ -2,6 +2,17 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-13 — M3c.2 bounded Pet Chat automation complete
+
+- Added a canonical per-pet chat store under `<dataDir>/chat/`, bounded to 20 turns and 48 KiB. Persisted turns contain only command ID, pet-originated user text, final assistant text, and creation/completion timestamps; corrupt or oversized records fail closed.
+- Clawd now records accepted `/pet-inbox` user turns best-effort without changing delivery receipts, serves local-only chat read/clear, and accepts capability-authenticated local/Remote SSH completion while deriving the caller pet from trusted profile/session identity.
+- Fixed the correlation race required by real Pi semantics: local and managed remote consumers register a command before calling void-returning `pi.sendUserMessage()`, whose `input` event can fire before the call returns. Synchronous dispatch failure removes the candidate without requeueing.
+- Correlation activates only on the real user `message_end` after an exact extension-source input. Busy queued follow-ups cannot absorb the current assistant response; interactive/RPC/peer input, thinking, tool blocks, custom messages, errors, aborts and full transcripts never enter history. Real Pi structured user content and camelCase `stopReason` are covered.
+- Added safe assistant control filtering and UTF-8 truncation to 8192 bytes. User ingress and the renderer agree on the 2000-Unicode-code-point limit. Observed queued origins survive tools running longer than the unobserved-dispatch timeout.
+- Added an async-created, independently closeable `Pi Pet Chat` Tauri window opened by a non-drag double-click. It sends through the existing own-session inbox, polls a strict sanitized projection, renders bubbles with `textContent`, uses a dedicated minimal capability, and does not alter pet position, session, Team or Board state when closed or cleared.
+- Verification passed: root **359/359**; Clawd focused chat/inbox/managed-extension/remote-consumer **89/89**; Clawd full **9,503 passed / 0 failed / 52 skipped** out of 9,555; renderer JS **81/81** and Rust **117/117**; optimized `cargo build --release`; real Pi TypeScript extension loader exit 0 with empty stderr. Windows ↔ Homelab GUI smoke remains the acceptance gate before M3c.3.
+- During full regression, aligned three stale Clawd tests with already-shipped behavior: Pi's Remote SSH extension paths are intentionally account-global, and recap startup may hide the native pet between window creation and recap start. This was committed separately from Pet Chat.
+
 ## 2026-09-13 — Five-tool public surface complete
 
 - Consolidated the three model-facing Team tools into `pet_team(action="status|create|dissolve", ...)` and the two Board tools into `pet_board(action="read|write", ...)`. Together with `pet_express`, `pet_list_sessions`, and `pet_send`, the public surface is now exactly five tools.
