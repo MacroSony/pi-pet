@@ -117,23 +117,25 @@ Tauri input
 
 **验收已完成：**两个本地 Pi session 与真实 Homelab Pi session 已完成双向一次性留言；来源、untrusted 边界、user-first、exactly-once、hop 预算、Clawd restart、SSH Disconnect/reconnect、stale handle 清理和原进程 heartbeat 恢复均通过。冻结契约见 [PEER-MESSAGING-CONTRACT.md](docs/PEER-MESSAGING-CONTRACT.md)。
 
-### Milestone 3 — Active Collaboration Decision Gate（当前 PoC）
+### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-先回答最重要的问题：两个真实 Pi session 被 peer note 自动唤醒后，是否真的能形成有用、可控、值得展示的协作。完整 Team / ACL / Board 在答案明确前全部 parked，避免为未经验证的体验提前建设平台。
+Lean peer wake decision gate 已通过真实 Windows → Homelab → Windows 两次自动 turn：receiver opt-in、`triggerTurn:true`、single-use hop 0 reply handle、hop 1 无 reply budget和 user-first 主链均成立。当前继续 M3a.2-lite，不恢复旧版完整 Team ACL 平台。
 
-当前只做一个最小纵切片：
+#### M3a.2-lite — Agent 自主拉群（当前）
 
-- `/pet-peer-wake on|off|status` 只控制当前 attach，默认 `off`，不持久化。
-- 复用 M2 已有 peer transport、authentication、provenance、TTL、dedup、rate limit、user-first 和 `maxHops=1`；不新增 endpoint 或网络权限。
-- 未 opt-in 时保持 M2 `triggerTurn:false`；receiver opt-in 后，已有 peer note 才使用 `triggerTurn:true`。
-- hop 0 可携带既有 single-use reply handle；hop 1 没有 reply handle，并明确提示停止。PoC 暂依赖提示约束，不建设 coordinator wake budget、Team handle 或硬 turn lease。
-- Windows 与真实 Homelab Pi 必须完成一次无需用户接力的两-turn smoke，再根据 token 消耗、打扰程度、回复质量和演示效果决定继续、缩减或停止 M3。
+- `/pet-team-autonomy on|off|status` 是当前 attach 的用户 standing authorization；默认 off，不持久化，session start/shutdown/reload 清零。
+- Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team_create(name, targets)`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
+- caller 自动成为 leader；targets 成为 member；每个 session 暂限一个 active Team。
+- `pet_team_status()` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
+- `pet_team_dissolve()` 仅 leader 且 autonomy enabled 时可用。
+- Lite Team 只是持久分组与发现信息，不授予新的 send/wake/Board/session 权限，因此暂不做 target invite/accept。
+- 不新增 `pth_`、`pet_team_send`、角色编辑、Team UI、wake budget、hard lease 或 Board。
 
-已实现的 M3a.1 neutral Team store 提交 `5eed86b` 暂时保留但不继续 wiring。完整产品化边界记录在 [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md)，其状态是 parked design，而不是当前 PoC 前置条件。
+M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。完整产品化边界仍记录在 [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md)，但继续保持 parked，只有真实失败证明需要时才解冻。
 
-#### Parked：Team ACL 与 Shared Board
+#### Parked：完整 Team ACL 与 Shared Board
 
-若 active-message smoke 通过 decision gate，再从最小可玩纵切片恢复 Team/ACL/Board。Board v1 候选包含：
+M3a.2-lite 真机可玩验证后，再决定是否实现 Board。Board v1 候选包含：
 
 ```text
 Goal
@@ -267,9 +269,9 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 
 1. Milestone 1 own-session inbox。（完成；自动化与 Windows/SSH 真机通过）
 2. Milestone 2 catalog + bounded passive peer messaging。（完成；本地/远程/restart/disconnect/reconnect 真机通过）
-3. Lean peer wake：session-local opt-in、复用 M2 `maxHops=1`、本地与真实 SSH 两-turn E2E。（当前）
-4. 试玩并执行 active-collaboration decision gate：继续完整 Team、保留简单 wake，或停止 M3。
-5. 若通过，再恢复 parked M3a.1 Team state 与 coordinator ACL / `pth_` handles。
+3. Lean peer wake：session-local opt-in、复用 M2 `maxHops=1`、真实 Windows↔Homelab 两-turn E2E。（完成；decision gate 通过）
+4. M3a.2-lite autonomous Team：session-local autonomy opt-in、Agent discovery/create/status/dissolve、复用 `psh_` + `pet_send`。（当前）
+5. 真实 local/SSH Agent 自主拉群 smoke；根据体验决定是否需要 invite/accept 或完整 Team ACL。
 6. 若 Team 仍有价值，再做 structured Board：revisioned patch、审计、并发冲突和独立 Board UI。
 7. 录制真实协作 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
 8. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。

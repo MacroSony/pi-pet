@@ -13,6 +13,7 @@ const typeboxStub = {
     Object: (properties) => ({ type: "object", properties }),
     Optional: (schema) => schema,
     String: (opts) => ({ type: "string", ...opts }),
+    Array: (items, opts) => ({ type: "array", items, ...opts }),
     Union: (schemas) => ({ anyOf: schemas }),
     Literal: (value) => ({ const: value }),
   },
@@ -119,12 +120,15 @@ function registerTools(pi = {}) {
 
 // ── 1. Exact Tool Registration & Schema ──────────────────────────────────────
 
-test("registers all three tools: pet_express, pet_list_sessions, and pet_send", () => {
+test("registers all six tools: pet_express, pet_list_sessions, pet_send, pet_team_status, pet_team_create, and pet_team_dissolve", () => {
   const tools = registerTools();
-  assert.equal(tools.size, 3);
+  assert.equal(tools.size, 6);
   assert.ok(tools.has("pet_express"));
   assert.ok(tools.has("pet_list_sessions"));
   assert.ok(tools.has("pet_send"));
+  assert.ok(tools.has("pet_team_status"));
+  assert.ok(tools.has("pet_team_create"));
+  assert.ok(tools.has("pet_team_dissolve"));
 
   const listDef = tools.get("pet_list_sessions");
   assert.equal(listDef.name, "pet_list_sessions");
@@ -151,6 +155,20 @@ test("registers all three tools: pet_express, pet_list_sessions, and pet_send", 
   assert.equal(sendDef.parameters.properties.text.type, "string");
   assert.equal(sendDef.parameters.properties.text.minLength, 1);
   assert.equal(sendDef.parameters.properties.text.maxLength, 2000);
+
+  const teamStatusDef = tools.get("pet_team_status");
+  assert.equal(teamStatusDef.name, "pet_team_status");
+  assert.equal(teamStatusDef.parameters.type, "object");
+
+  const teamCreateDef = tools.get("pet_team_create");
+  assert.equal(teamCreateDef.name, "pet_team_create");
+  assert.equal(teamCreateDef.parameters.type, "object");
+  assert.equal(teamCreateDef.parameters.properties.name.type, "string");
+  assert.equal(teamCreateDef.parameters.properties.targets.type, "array");
+
+  const teamDissolveDef = tools.get("pet_team_dissolve");
+  assert.equal(teamDissolveDef.name, "pet_team_dissolve");
+  assert.equal(teamDissolveDef.parameters.type, "object");
 });
 
 // ── 2. Local Config & Remote Preference ──────────────────────────────────────

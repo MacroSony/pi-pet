@@ -39,7 +39,13 @@ const MAX_TEXT_LENGTH = 2000;
 const CLAWD_SERVER_ID = "clawd-on-desk";
 const CLAWD_SERVER_HEADER = "x-clawd-server";
 const PEER_CAPABILITY_SLOT_SYMBOL = Symbol.for("pi-pet.peer-capability.v1");
-const PEER_ALLOWED_PATHS = new Set(["/pet-peer/catalog", "/pet-peer/send"]);
+const PEER_ALLOWED_PATHS = new Set([
+  "/pet-peer/catalog",
+  "/pet-peer/send",
+  "/pet-team/status",
+  "/pet-team/create",
+  "/pet-team/dissolve",
+]);
 const PEER_LOCAL_TIMEOUT_MS = 2500;
 const PEER_REMOTE_TIMEOUT_MS = 5000;
 
@@ -768,6 +774,102 @@ function createPeerWakeState() {
   };
 }
 
+function createTeamAutonomyState() {
+  let sessionId = null;
+  let enabled = false;
+
+  return {
+    enableFor(nextSessionId) {
+      sessionId = canonicalizePiSessionId(nextSessionId);
+      enabled = Boolean(sessionId);
+      return enabled;
+    },
+    disable() {
+      sessionId = null;
+      enabled = false;
+    },
+    resetFor(nextSessionId) {
+      sessionId = canonicalizePiSessionId(nextSessionId);
+      enabled = false;
+    },
+    isEnabledFor(candidateSessionId) {
+      const normalized = canonicalizePiSessionId(candidateSessionId);
+      return enabled && Boolean(normalized) && normalized === sessionId;
+    },
+    get enabled() {
+      return enabled;
+    },
+  };
+}
+
+function sanitizeTeamMember(member) {
+  if (!member || typeof member !== "object" || Array.isArray(member)) return null;
+  const out = {
+    displayName: sanitizePublicText(member.displayName, 120) || "Pi",
+    host: sanitizePublicText(member.host, 120) || "local",
+    state: sanitizePublicText(member.state, 64) || "idle",
+    role: typeof member.role === "string" ? member.role : "member",
+    canMessage: Boolean(member.canMessage),
+  };
+  if (typeof member.handle === "string" && /^psh_[A-Za-z0-9_-]{1,124}$/.test(member.handle)) {
+    out.handle = member.handle;
+  }
+  return out;
+}
+
+function sanitizeTeamObject(team) {
+  if (!team || typeof team !== "object" || Array.isArray(team)) return null;
+  const out = {
+    name: sanitizePublicText(team.name, 80) || "",
+    revision: Number.isSafeInteger(team.revision) ? team.revision : 1,
+    callerRole: typeof team.callerRole === "string" ? team.callerRole : "member",
+    members: [],
+  };
+  if (Array.isArray(team.members)) {
+    for (const m of team.members) {
+      const sanitizedMember = sanitizeTeamMember(m);
+      if (sanitizedMember) {
+        out.members.push(sanitizedMember);
+      }
+    }
+  }
+  return out;
+}
+
+function sanitizeTeamDetails(data, defaultReason = null) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return {
+      schemaVersion: "1",
+      kind: "team_status",
+      status: "failed",
+      reason: sanitizePublicText(defaultReason, 1024) || "invalid response",
+    };
+  }
+
+  const out = {
+    schemaVersion: typeof data.schemaVersion === "string" ? data.schemaVersion : "1",
+    kind: typeof data.kind === "string" ? data.kind : "team_status",
+    status: typeof data.status === "string" ? data.status : "failed",
+  };
+
+  if (data.team) {
+    const sanitizedTeam = sanitizeTeamObject(data.team);
+    if (sanitizedTeam) {
+      out.team = sanitizedTeam;
+    }
+  }
+
+  const safeReason = sanitizePublicText(data.reason, 1024);
+  const safeDefaultReason = sanitizePublicText(defaultReason, 1024);
+  if (safeReason) {
+    out.reason = safeReason;
+  } else if (safeDefaultReason && out.status !== "active" && out.status !== "none" && out.status !== "dissolved") {
+    out.reason = safeDefaultReason;
+  }
+
+  return out;
+}
+
 function createInboxConsumer(pi, options = {}) {
   const env = options.env || process.env;
   const profileId = (
@@ -1423,7 +1525,11 @@ function piPetExtension(pi, dependencies = {}) {
   // and tests, but production loading must not depend on extension-local
   // node_modules.
   const Type = dependencies.Type || require("typebox").Type;
+  const typeArray = (typeof Type.Array === "function")
+    ? Type.Array.bind(Type)
+    : (items, opts) => ({ type: "array", items, ...opts });
   const peerWakeState = createPeerWakeState();
+  const teamAutonomyState = createTeamAutonomyState();
 
   if (pi && typeof pi.registerCommand === "function") {
     pi.registerCommand("pet-peer-wake", {
@@ -1463,6 +1569,43 @@ function piPetExtension(pi, dependencies = {}) {
         }
 
         notify("Usage: /pet-peer-wake [on|off|status]", "error");
+      },
+    });
+
+    pi.registerCommand("pet-team-autonomy", {
+      description: "Enable or disable standing authorization for the Agent to mutate Team state in this Pi session.",
+      handler: async (args, ctx) => {
+        const action = typeof args === "string" ? args.trim().toLowerCase() : "";
+        const notify = (text, level = "info") => {
+          if (ctx && ctx.ui && typeof ctx.ui.notify === "function") {
+            ctx.ui.notify(text, level);
+          }
+        };
+
+        if (!action || action === "status") {
+          notify(`Pi Pet team autonomy is ${teamAutonomyState.enabled ? "on" : "off"} for this session.`);
+          return;
+        }
+
+        if (action === "on") {
+          const sessionId = getCanonicalSessionId(ctx, pi);
+          const capabilityToken = readPeerCapabilityToken();
+          if (!sessionId || !capabilityToken || !teamAutonomyState.enableFor(sessionId)) {
+            teamAutonomyState.disable();
+            notify("Cannot enable Pi Pet team autonomy: session identity or peer capability is unavailable.", "error");
+            return;
+          }
+          notify("Pi Pet team autonomy is ON for this session.", "warning");
+          return;
+        }
+
+        if (action === "off") {
+          teamAutonomyState.disable();
+          notify("Pi Pet team autonomy is OFF for this session.");
+          return;
+        }
+
+        notify("Usage: /pet-team-autonomy [on|off|status]", "error");
       },
     });
   }
@@ -1645,6 +1788,219 @@ function piPetExtension(pi, dependencies = {}) {
     });
 
     pi.registerTool({
+      name: "pet_team_status",
+      label: "Get Pet Team Status",
+      description:
+        "Check the active team status for this pet session. Returns team name, revision, caller role, and members with fresh messaging handles.",
+      promptSnippet:
+        "pet_team_status() — check current team membership, active teammates, and messaging handles",
+      promptGuidelines: [
+        "Returns the active team details if this session is part of a team, or status none if not.",
+        "Teammate handles (psh_...) are refreshed in the response for direct messaging with pet_send.",
+      ],
+      parameters: Type.Object({}),
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+        }
+
+        if (params && typeof params === "object") {
+          for (const key of Object.keys(params)) {
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+          }
+        }
+
+        const rawSessionId = getCanonicalSessionId(ctx, pi);
+        if (!rawSessionId) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+        }
+
+        const capabilityToken = readPeerCapabilityToken();
+        if (!capabilityToken) {
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+        }
+
+        const config = resolvePeerTransportConfig();
+        if (!config) {
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+        }
+
+        const body = {
+          schemaVersion: "1",
+          kind: "team_status",
+          rawSessionId,
+          capabilityToken,
+        };
+
+        const res = await postPeerJson(config, "/pet-team/status", body, signal);
+        if (!res.ok || res.status !== 200) {
+          const errorDetails = sanitizeTeamDetails(res.data, res.reason || `HTTP ${res.status}`);
+          return formatPeerResult(errorDetails, true);
+        }
+
+        const sanitized = sanitizeTeamDetails(res.data);
+        return formatPeerResult(sanitized, false);
+      },
+    });
+
+    pi.registerTool({
+      name: "pet_team_create",
+      label: "Create Pet Team",
+      description:
+        "Form a new autonomous team with specified active pet sessions. Gated by user standing authorization (/pet-team-autonomy on).",
+      promptSnippet:
+        "pet_team_create(name, targets) — form a new team with target pet sessions",
+      promptGuidelines: [
+        "Requires standing user authorization enabled via /pet-team-autonomy on.",
+        "name must be 1 to 80 characters without control characters.",
+        "targets must be an array of 1 to 7 opaque session handles (psh_...) obtained from pet_list_sessions.",
+        "Caller automatically becomes the team leader; targets become team members.",
+        "Each session may belong to at most one active team.",
+      ],
+      parameters: Type.Object({
+        name: Type.String({ minLength: 1, maxLength: 80 }),
+        targets: typeArray(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 7 }),
+      }),
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (!params || typeof params !== "object" || Array.isArray(params)) {
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+        }
+
+        for (const key of Object.keys(params)) {
+          if (key !== "name" && key !== "targets") {
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+          }
+        }
+
+        const rawSessionId = getCanonicalSessionId(ctx, pi);
+        if (!rawSessionId) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+        }
+
+        if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
+          return formatPeerResult({
+            status: "rejected",
+            reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
+          }, true);
+        }
+
+        const { name, targets } = params;
+        if (typeof name !== "string") {
+          return formatPeerResult({ status: "rejected", reason: "name must be a string" }, true);
+        }
+
+        const trimmedName = name.trim();
+        const cpLen = countCodePoints(trimmedName);
+        if (cpLen < 1 || cpLen > 80 || /[\u0000-\u001F\u007F-\u009F]/.test(name)) {
+          return formatPeerResult({ status: "rejected", reason: "name length must be between 1 and 80 characters without control characters" }, true);
+        }
+
+        if (!Array.isArray(targets) || targets.length < 1 || targets.length > 7) {
+          return formatPeerResult({ status: "rejected", reason: "targets must be an array of 1 to 7 session handles" }, true);
+        }
+
+        for (const t of targets) {
+          if (typeof t !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(t)) {
+            return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true);
+          }
+        }
+
+        if (new Set(targets).size !== targets.length) {
+          return formatPeerResult({ status: "rejected", reason: "Duplicate target handles in targets array" }, true);
+        }
+
+        const capabilityToken = readPeerCapabilityToken();
+        if (!capabilityToken) {
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+        }
+
+        const config = resolvePeerTransportConfig();
+        if (!config) {
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+        }
+
+        const body = {
+          schemaVersion: "1",
+          kind: "team_create",
+          rawSessionId,
+          capabilityToken,
+          name: trimmedName,
+          targets,
+        };
+
+        const res = await postPeerJson(config, "/pet-team/create", body, signal);
+        const isSuccessHttp = res.status === 200 || res.status === 201;
+        const sanitized = sanitizeTeamDetails(res.data, res.ok ? null : (res.reason || `HTTP ${res.status}`));
+        const isSuccessStatus = sanitized.status === "active" || sanitized.status === "created";
+        const isError = !(isSuccessHttp && isSuccessStatus);
+
+        return formatPeerResult(sanitized, isError);
+      },
+    });
+
+    pi.registerTool({
+      name: "pet_team_dissolve",
+      label: "Dissolve Pet Team",
+      description:
+        "Dissolve the active team led by this pet session. Gated by user standing authorization (/pet-team-autonomy on).",
+      promptSnippet:
+        "pet_team_dissolve() — dissolve the current active team (leader only)",
+      promptGuidelines: [
+        "Requires standing user authorization enabled via /pet-team-autonomy on.",
+        "Caller must be the leader of its active team.",
+      ],
+      parameters: Type.Object({}),
+      async execute(toolCallId, params, signal, onUpdate, ctx) {
+        if (params !== undefined && (typeof params !== "object" || Array.isArray(params))) {
+          return formatPeerResult({ status: "rejected", reason: "Parameters must be an object" }, true);
+        }
+
+        if (params && typeof params === "object") {
+          for (const key of Object.keys(params)) {
+            return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true);
+          }
+        }
+
+        const rawSessionId = getCanonicalSessionId(ctx, pi);
+        if (!rawSessionId) {
+          return formatPeerResult({ status: "rejected", reason: "Invalid or uninitialized session" }, true);
+        }
+
+        if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
+          return formatPeerResult({
+            status: "rejected",
+            reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
+          }, true);
+        }
+
+        const capabilityToken = readPeerCapabilityToken();
+        if (!capabilityToken) {
+          return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true);
+        }
+
+        const config = resolvePeerTransportConfig();
+        if (!config) {
+          return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true);
+        }
+
+        const body = {
+          schemaVersion: "1",
+          kind: "team_dissolve",
+          rawSessionId,
+          capabilityToken,
+        };
+
+        const res = await postPeerJson(config, "/pet-team/dissolve", body, signal);
+        const isSuccessHttp = res.status === 200;
+        const sanitized = sanitizeTeamDetails(res.data, res.ok ? null : (res.reason || `HTTP ${res.status}`));
+        const isSuccessStatus = sanitized.status === "dissolved";
+        const isError = !(isSuccessHttp && isSuccessStatus);
+
+        return formatPeerResult(sanitized, isError);
+      },
+    });
+
+    pi.registerTool({
       name: "pet_express",
       label: "Pet Express",
       description:
@@ -1753,10 +2109,12 @@ function piPetExtension(pi, dependencies = {}) {
       shouldTriggerPeerTurn: ({ sessionId }) => peerWakeState.isEnabledFor(sessionId),
       onSessionStart: (sessionId) => {
         peerWakeState.resetFor(sessionId);
+        teamAutonomyState.resetFor(sessionId);
         setSharedPeerWakeMode("off");
       },
       onSessionShutdown: () => {
         peerWakeState.disable();
+        teamAutonomyState.disable();
         setSharedPeerWakeMode("off");
       },
     });
@@ -1793,5 +2151,9 @@ module.exports.getCanonicalSessionId = getCanonicalSessionId;
 module.exports.extractMessageText = extractMessageText;
 module.exports.setSharedPeerWakeMode = setSharedPeerWakeMode;
 module.exports.createPeerWakeState = createPeerWakeState;
+module.exports.createTeamAutonomyState = createTeamAutonomyState;
+module.exports.sanitizeTeamMember = sanitizeTeamMember;
+module.exports.sanitizeTeamObject = sanitizeTeamObject;
+module.exports.sanitizeTeamDetails = sanitizeTeamDetails;
 module.exports.createInboxConsumer = createInboxConsumer;
 module.exports.attachInboxConsumer = attachInboxConsumer;

@@ -1,10 +1,10 @@
 # Pi Pet Team and Bounded Wake Contract v1
 
-> Status: **parked productization contract**. It is retained as the hardened design if the Lean active-message PoC passes its decision gate; it is not a prerequisite or claim about the current PoC implementation.
+> Status: **parked productization contract**. The Lean active-message decision gate passed, but this hardened Team/ACL design remains conditional rather than a prerequisite for the current PoC.
 >
-> Current PoC delta: `/pet-peer-wake on|off|status` temporarily allows an explicitly opted-in receiver to run the existing M2 peer note with `triggerTurn:true`. It reuses `maxHops=1` and prompt guidance but does **not** implement Team-scoped handles, coordinator budgets, capability-policy heartbeat, or a hard turn lease.
+> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. Team membership grants no new authority.
 >
-> Scope after decision gate: user-created static Teams, fixed Team ACL, Team-scoped messaging handles, and explicitly enabled two-turn Agent collaboration. Shared Board is a later slice. Renderer Team UI and semantic movement are later still.
+> Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, Shared Board, Team UI, or semantic movement.
 
 ## 1. Product boundary
 

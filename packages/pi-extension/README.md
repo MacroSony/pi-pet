@@ -154,6 +154,29 @@ Opt-in is memory-only, defaults to off, and resets on session shutdown, extensio
 
 The root extension and Clawd's managed extension share only the existing process-private peer capability slot. The command adds a `wakeMode` flag while preserving the capability token; the remote consumer validates the same token and reads the flag at dispatch time. Nothing is advertised over the wire and no new endpoint is opened.
 
+## Autonomous Team PoC
+
+Team mutation is disabled by default. The user may grant the current attach standing authorization:
+
+```text
+/pet-team-autonomy on
+/pet-team-autonomy off
+/pet-team-autonomy status
+```
+
+With autonomy enabled, the Agent may discover active sessions and form one Team:
+
+```text
+pet_list_sessions()
+pet_team_create(name, targets)
+pet_team_status()
+pet_team_dissolve()
+```
+
+`targets` are 1–7 existing `psh_` catalog handles returned by `pet_list_sessions`; they are machine-facing values passed verbatim by the Agent, not IDs for the user to type. Creation consumes the handles, resolves them to internal pet identities, and stores no `psh_` value. Team status returns names, roles, availability and fresh short-lived handles for active teammates; messaging continues through `pet_send`.
+
+Autonomy is session/attach-local, defaults off, and resets on session start, shutdown or extension reload. Team membership itself grants no new messaging, wake, Board or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
+
 ## Secure Remote SSH Inbox Consumption
 
 Remote Pi sessions use Clawd's separately managed extension (`clawd-on-desk/hooks/pi-extension-core.js`), not the local filesystem consumer in this package. The desktop still enqueues through local Clawd; the remote extension advertises an attach-scoped capability over authenticated `/state`, then claim/settle polls through the existing SSH reverse tunnel. User settle retries never re-invoke `pi.sendUserMessage`; peer settle retries never re-invoke `pi.sendMessage`. See the inbox and peer contracts for the exact trust and receipt semantics.
