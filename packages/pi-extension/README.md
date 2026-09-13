@@ -1,6 +1,6 @@
 # pi-pet Pi extension
 
-Registers `pet_express`, `pet_list_sessions`, and `pet_send`; attaches the local user/peer inbox consumer; and exposes the receiver-local Lean PoC command `/pet-peer-wake`.
+Registers the five-tool public surface — `pet_express`, `pet_list_sessions`, `pet_send`, `pet_team`, and `pet_board` — attaches the local user/peer inbox consumer, and exposes the receiver-local Lean PoC command `/pet-peer-wake`.
 
 Contracts:
 - Agent Expressions: [`docs/drafts/phase-a-interaction-contract.md`](../../docs/drafts/phase-a-interaction-contract.md)
@@ -35,6 +35,10 @@ the PetEvent + DeliveryReceipt under `~/.pi-pet/`.
 
 ## Tool surface
 
+The model-facing surface is intentionally fixed at five tools. Team operations share `pet_team(action, ...)`; Board operations share `pet_board(action, ...)`. The former standalone Team/Board tool names are not registered or kept as compatibility shims.
+
+### `pet_express`
+
 | Parameter | Type | Constraint |
 |---|---|---|
 | `text` | string, optional | 1–2000 chars, bubble text |
@@ -50,9 +54,9 @@ Coordinator wire responses remain complete for validation and debugging, but the
 `content` is projected down to fields needed for the next action. Opaque `psh_` handles remain
 available to the model only where routing requires them (`pet_list_sessions` and messageable
 Team members); envelope IDs, timestamps, fixed capability fields and redundant write echoes are
-omitted. All eight tools provide custom TUI renderers, so human collapsed/expanded views show
+omitted. All five tools provide custom TUI renderers, so human collapsed/expanded views show
 named summaries rather than protocol JSON and never display raw handles, internal IDs, paths or
-tokens. `pet_board_read` may show the bounded Markdown document when expanded.
+tokens. `pet_board(action="read")` may show the bounded Markdown document when expanded.
 
 ## Remote Delivery Mode
 
@@ -184,9 +188,9 @@ With autonomy enabled, the Agent may discover active sessions and form one Team:
 
 ```text
 pet_list_sessions()
-pet_team_create(name, targets)
-pet_team_status()
-pet_team_dissolve()
+pet_team(action="create", name="Release Team", targets=[...])
+pet_team(action="status")
+pet_team(action="dissolve")
 ```
 
 `targets` are 1–7 existing `psh_` catalog handles returned by `pet_list_sessions`; they are machine-facing values passed verbatim by the Agent, not IDs for the user to type. Creation consumes the handles, resolves them to internal pet identities, and stores no `psh_` value. Team status returns names, roles, availability and fresh short-lived handles for active teammates; messaging continues through `pet_send`.
@@ -198,7 +202,7 @@ Autonomy is session/attach-local, defaults off, and resets on session start, shu
 Every active Team has one coordinator-hosted Markdown scratchpad. Reading is available to Team members:
 
 ```text
-pet_board_read()
+pet_board(action="read")
 ```
 
 Agent writes require separate standing authorization for the current attach:
@@ -207,7 +211,7 @@ Agent writes require separate standing authorization for the current attach:
 /pet-board-write on
 /pet-board-write off
 /pet-board-write status
-pet_board_write(baseRevision, markdown)
+pet_board(action="write", baseRevision=2, markdown="...")
 ```
 
 The document is capped at 8192 UTF-8 bytes. A write atomically replaces the whole document only when `baseRevision` exactly matches the latest Board revision. On conflict, re-read and merge intentionally; there is no silent last-write-wins. Write authorization defaults off and resets on session start, shutdown or extension reload.

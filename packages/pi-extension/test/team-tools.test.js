@@ -244,21 +244,20 @@ test("autonomy state resets on session start and disables on session shutdown", 
   assert.ok(notificationsAfter[0].text.includes("off"));
 });
 
-// ── 2. Gating for pet_team_create and pet_team_dissolve ───────────────────────
+// ── 2. Gating for pet_team (create and dissolve actions) ───────────────────────
 
-test("pet_team_create and pet_team_dissolve are rejected when autonomy is off; status is not gated", async () => {
+test("pet_team create and dissolve actions are rejected when autonomy is off; status action is not gated", async () => {
   const { tools } = registerComponents();
-  const createTool = tools.get("pet_team_create");
-  const dissolveTool = tools.get("pet_team_dissolve");
-  const statusTool = tools.get("pet_team_status");
+  const teamTool = tools.get("pet_team");
+  assert.ok(teamTool);
 
   setPeerCapabilitySlot(VALID_TOKEN);
   const ctx = makeCtx("ses-gate");
 
   // Autonomy is OFF by default
-  const createRes = await createTool.execute(
+  const createRes = await teamTool.execute(
     "call-1",
-    { name: "My Team", targets: ["psh_member1"] },
+    { action: "create", name: "My Team", targets: ["psh_member1"] },
     undefined,
     undefined,
     ctx
@@ -268,9 +267,9 @@ test("pet_team_create and pet_team_dissolve are rejected when autonomy is off; s
   assert.equal(createBody.status, "rejected");
   assert.ok(createBody.reason.includes("/pet-team-autonomy on"));
 
-  const dissolveRes = await dissolveTool.execute(
+  const dissolveRes = await teamTool.execute(
     "call-2",
-    {},
+    { action: "dissolve" },
     undefined,
     undefined,
     ctx
@@ -280,10 +279,10 @@ test("pet_team_create and pet_team_dissolve are rejected when autonomy is off; s
   assert.equal(dissolveBody.status, "rejected");
   assert.ok(dissolveBody.reason.includes("/pet-team-autonomy on"));
 
-  // pet_team_status is read-only and NOT gated by autonomy (it fails on transport if not configured, not autonomy)
-  const statusRes = await statusTool.execute(
+  // pet_team action: "status" is read-only and NOT gated by autonomy (it fails on transport if not configured, not autonomy)
+  const statusRes = await teamTool.execute(
     "call-3",
-    {},
+    { action: "status" },
     undefined,
     undefined,
     ctx
@@ -293,7 +292,194 @@ test("pet_team_create and pet_team_dissolve are rejected when autonomy is off; s
   assert.ok(!statusBody.reason.includes("/pet-team-autonomy on"));
 });
 
-// ── 3. Exact Wire Bodies, Pass-Through & Sanitized Responses ──────────────────
+// ── 3. Strict Parameter & Conditional Validation for pet_team ──────────────────
+
+test("pet_team parameter and strict conditional validation", async () => {
+  const { tools, commands } = registerComponents();
+  const teamTool = tools.get("pet_team");
+  assert.ok(teamTool);
+  const autonomyCmd = commands.get("pet-team-autonomy");
+
+  setPeerCapabilitySlot(VALID_TOKEN);
+  const ctx = makeCtx("ses-team-val");
+
+  // 1. Non-object / array parameters
+  for (const badParam of [null, undefined, "string", 123, true, []]) {
+    const res = await teamTool.execute("tc-tv-obj", badParam, undefined, undefined, ctx);
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "Parameters must be an object");
+  }
+
+  // 2. Unexpected top-level parameter keys
+  const unexpectedRes = await teamTool.execute(
+    "tc-tv-unexp",
+    { action: "status", unexpectedKey: true },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(unexpectedRes.isError, true);
+  assert.ok(JSON.parse(unexpectedRes.content[0].text).reason.includes('Unexpected parameter: "unexpectedKey"'));
+
+  // 3. Missing / unknown / invalid action
+  for (const badAction of [undefined, null, 123, true, "", "unknown", "invalid", "READ", "STATUS"]) {
+    const res = await teamTool.execute("tc-tv-act", { action: badAction }, undefined, undefined, ctx);
+    assert.equal(res.isError, true);
+    assert.ok(JSON.parse(res.content[0].text).reason.includes("action must be one of: status, create, dissolve"));
+  }
+
+  // Missing action key in object
+  const missingActionRes = await teamTool.execute("tc-tv-noact", {}, undefined, undefined, ctx);
+  assert.equal(missingActionRes.isError, true);
+  assert.ok(JSON.parse(missingActionRes.content[0].text).reason.includes("action must be one of: status, create, dissolve"));
+
+  // 4. action: "status" rejects name and targets
+  const statusNameRes = await teamTool.execute(
+    "tc-tv-stat-name",
+    { action: "status", name: "Team Alpha" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(statusNameRes.isError, true);
+  assert.equal(JSON.parse(statusNameRes.content[0].text).reason, 'Unexpected parameter for action "status": name');
+
+  const statusTargetsRes = await teamTool.execute(
+    "tc-tv-stat-tgt",
+    { action: "status", targets: ["psh_member1"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(statusTargetsRes.isError, true);
+  assert.equal(JSON.parse(statusTargetsRes.content[0].text).reason, 'Unexpected parameter for action "status": targets');
+
+  // 5. action: "dissolve" rejects name and targets
+  const dissolveNameRes = await teamTool.execute(
+    "tc-tv-dis-name",
+    { action: "dissolve", name: "Team Alpha" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(dissolveNameRes.isError, true);
+  assert.equal(JSON.parse(dissolveNameRes.content[0].text).reason, 'Unexpected parameter for action "dissolve": name');
+
+  const dissolveTargetsRes = await teamTool.execute(
+    "tc-tv-dis-tgt",
+    { action: "dissolve", targets: ["psh_member1"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(dissolveTargetsRes.isError, true);
+  assert.equal(JSON.parse(dissolveTargetsRes.content[0].text).reason, 'Unexpected parameter for action "dissolve": targets');
+
+  // 6. action: "create" requires exactly name + targets (when autonomy is on)
+  await autonomyCmd.handler("on", ctx);
+
+  // Missing / invalid name
+  for (const badName of [undefined, null, 123, true, {}, []]) {
+    const res = await teamTool.execute(
+      "tc-tv-cr-noname",
+      { action: "create", name: badName, targets: ["psh_member1"] },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "name must be a string");
+  }
+
+  // Missing name parameter entirely
+  const noNameRes = await teamTool.execute(
+    "tc-tv-cr-noname2",
+    { action: "create", targets: ["psh_member1"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(noNameRes.isError, true);
+  assert.equal(JSON.parse(noNameRes.content[0].text).reason, "name must be a string");
+
+  // Name length boundaries and control characters
+  for (const badName of ["", "   ", "a".repeat(81), "Team\x00Name", "Team\x1fName", "Team\x7fName", "Team\x9fName"]) {
+    const res = await teamTool.execute(
+      "tc-tv-cr-badname",
+      { action: "create", name: badName, targets: ["psh_member1"] },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(
+      JSON.parse(res.content[0].text).reason,
+      "name length must be between 1 and 80 characters without control characters"
+    );
+  }
+
+  // Missing / invalid targets
+  for (const badTargets of [undefined, null, 123, "psh_member1", {}, []]) {
+    const res = await teamTool.execute(
+      "tc-tv-cr-badtgt",
+      { action: "create", name: "Team Alpha", targets: badTargets },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "targets must be an array of 1 to 7 session handles");
+  }
+
+  // Missing targets parameter entirely
+  const noTargetsRes = await teamTool.execute(
+    "tc-tv-cr-notgt",
+    { action: "create", name: "Team Alpha" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(noTargetsRes.isError, true);
+  assert.equal(JSON.parse(noTargetsRes.content[0].text).reason, "targets must be an array of 1 to 7 session handles");
+
+  // Targets array length > 7
+  const eightTargets = Array.from({ length: 8 }, (_, i) => `psh_target_${i}`);
+  const overTargetsRes = await teamTool.execute(
+    "tc-tv-cr-overtgt",
+    { action: "create", name: "Team Alpha", targets: eightTargets },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(overTargetsRes.isError, true);
+  assert.equal(JSON.parse(overTargetsRes.content[0].text).reason, "targets must be an array of 1 to 7 session handles");
+
+  // Invalid target handle formats (non-psh_ or invalid chars or non-string)
+  for (const badTarget of ["not_psh", "psh_", "psh_invalid space", "psh_" + "a".repeat(125), 123, null, {}]) {
+    const res = await teamTool.execute(
+      "tc-tv-cr-invalhandle",
+      { action: "create", name: "Team Alpha", targets: [badTarget] },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "Invalid target: expected a psh_ opaque handle");
+  }
+
+  // Duplicate target handles in targets array
+  const dupTargetsRes = await teamTool.execute(
+    "tc-tv-cr-duptgt",
+    { action: "create", name: "Team Alpha", targets: ["psh_member1", "psh_member1"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(dupTargetsRes.isError, true);
+  assert.equal(JSON.parse(dupTargetsRes.content[0].text).reason, "Duplicate target handles in targets array");
+});
+
+// ── 4. Exact Wire Bodies, Pass-Through & Sanitized Responses ──────────────────
 
 test("exact status, create, dissolve wire requests, psh pass-through, and sanitized responses", async () => {
   const requests = [];
@@ -416,9 +602,8 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
   try {
     const { tools, commands } = registerComponents();
     const autonomyCmd = commands.get("pet-team-autonomy");
-    const statusTool = tools.get("pet_team_status");
-    const createTool = tools.get("pet_team_create");
-    const dissolveTool = tools.get("pet_team_dissolve");
+    const teamTool = tools.get("pet_team");
+    assert.ok(teamTool);
 
     const rawSessionId = "pi:test-session-leader";
     const ctx = makeCtx(rawSessionId);
@@ -426,8 +611,8 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
     // Enable autonomy
     await autonomyCmd.handler("on", ctx);
 
-    // ── 1. pet_team_status ──
-    const statusResult = await statusTool.execute("tc-stat-1", {}, undefined, undefined, ctx);
+    // ── 1. pet_team (action: "status") ──
+    const statusResult = await teamTool.execute("tc-stat-1", { action: "status" }, undefined, undefined, ctx);
     assert.equal(statusResult.isError, false);
     assert.equal(requests.length, 1);
     const reqStatus = requests[0];
@@ -465,11 +650,11 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
     assert.equal(statusParsed.team.members.length, 2);
     assert.equal(statusParsed.team.members[1].handle, "psh_fresh_worker_handle_123");
 
-    // ── 2. pet_team_create (with psh machine-pass-through) ──
+    // ── 2. pet_team (action: "create" with psh machine-pass-through) ──
     const targetHandles = ["psh_target_alpha_111", "psh_target_beta_222"];
-    const createResult = await createTool.execute(
+    const createResult = await teamTool.execute(
       "tc-create-1",
-      { name: "Bravo Squad", targets: targetHandles },
+      { action: "create", name: "Bravo Squad", targets: targetHandles },
       undefined,
       undefined,
       ctx
@@ -496,8 +681,14 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
     assert.equal(createParsed.status, "active");
     assert.equal(createParsed.team.name, "Bravo Squad");
 
-    // ── 3. pet_team_dissolve ──
-    const dissolveResult = await dissolveTool.execute("tc-dissolve-1", {}, undefined, undefined, ctx);
+    // ── 3. pet_team (action: "dissolve") ──
+    const dissolveResult = await teamTool.execute(
+      "tc-dissolve-1",
+      { action: "dissolve" },
+      undefined,
+      undefined,
+      ctx
+    );
     assert.equal(dissolveResult.isError, false);
     assert.equal(requests.length, 3);
     const reqDissolve = requests[2];
@@ -524,7 +715,7 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
   }
 });
 
-// ── 4. Unit sanitization tests ────────────────────────────────────────────────
+// ── 5. Unit sanitization tests ────────────────────────────────────────────────
 
 test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce strict projections", () => {
   const rawMember = {
@@ -592,7 +783,7 @@ test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce st
   assert.equal(teamSanitized.team.secretField, undefined);
 });
 
-// ── 5. /pet-board-write command tests ──────────────────────────────────────────
+// ── 6. /pet-board-write command tests ──────────────────────────────────────────
 
 test("/pet-board-write default off, enable, disable, and status reporting", async () => {
   const { commands } = registerComponents();
@@ -696,21 +887,21 @@ test("board write state resets on session start and disables on session shutdown
   assert.ok(notificationsAfter[0].text.includes("off"));
 });
 
-// ── 6. Gating for pet_board_write ──────────────────────────────────────────────
+// ── 7. Gating for pet_board (write action) ──────────────────────────────────────
 
-test("pet_board_write is rejected when /pet-board-write is off; pet_board_read is not gated", async () => {
+test("pet_board write action is rejected when /pet-board-write is off; read action is not gated", async () => {
   const { tools, commands } = registerComponents();
-  const writeTool = tools.get("pet_board_write");
-  const readTool = tools.get("pet_board_read");
+  const boardTool = tools.get("pet_board");
+  assert.ok(boardTool);
   const boardWriteCmd = commands.get("pet-board-write");
 
   setPeerCapabilitySlot(VALID_TOKEN);
   const ctx = makeCtx("ses-board-gate");
 
   // Board write is OFF by default
-  const writeRes = await writeTool.execute(
+  const writeRes = await boardTool.execute(
     "call-1",
-    { baseRevision: 0, markdown: "# Hello" },
+    { action: "write", baseRevision: 0, markdown: "# Hello" },
     undefined,
     undefined,
     ctx
@@ -720,10 +911,10 @@ test("pet_board_write is rejected when /pet-board-write is off; pet_board_read i
   assert.equal(writeBody.status, "rejected");
   assert.ok(writeBody.reason.includes("/pet-board-write on"));
 
-  // pet_board_read is read-only and NOT gated by /pet-board-write
-  const readRes = await readTool.execute(
+  // pet_board action: "read" is read-only and NOT gated by /pet-board-write
+  const readRes = await boardTool.execute(
     "call-2",
-    {},
+    { action: "read" },
     undefined,
     undefined,
     ctx
@@ -734,9 +925,9 @@ test("pet_board_write is rejected when /pet-board-write is off; pet_board_read i
 
   // Enabling on session-1 does not enable on session-2 (session isolation)
   await boardWriteCmd.handler("on", makeCtx("ses-board-session-1"));
-  const writeRes2 = await writeTool.execute(
+  const writeRes2 = await boardTool.execute(
     "call-3",
-    { baseRevision: 0, markdown: "# Hello" },
+    { action: "write", baseRevision: 0, markdown: "# Hello" },
     undefined,
     undefined,
     makeCtx("ses-board-session-2")
@@ -747,65 +938,156 @@ test("pet_board_write is rejected when /pet-board-write is off; pet_board_read i
   assert.ok(writeBody2.reason.includes("/pet-board-write on"));
 });
 
-// ── 7. Parameter validation for pet_board_read & pet_board_write ──────────────
+// ── 8. Strict Parameter & Conditional Validation for pet_board ─────────────────
 
-test("pet_board_read and pet_board_write parameter validation", async () => {
+test("pet_board parameter and strict conditional validation", async () => {
   const { tools, commands } = registerComponents();
-  const writeTool = tools.get("pet_board_write");
-  const readTool = tools.get("pet_board_read");
+  const boardTool = tools.get("pet_board");
+  assert.ok(boardTool);
   const boardWriteCmd = commands.get("pet-board-write");
 
   setPeerCapabilitySlot(VALID_TOKEN);
   const ctx = makeCtx("ses-board-val");
+
+  // 1. Non-object / array parameters
+  for (const badParam of [null, undefined, "string", 123, true, []]) {
+    const res = await boardTool.execute("tc-bv-obj", badParam, undefined, undefined, ctx);
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "Parameters must be an object");
+  }
+
+  // 2. Unexpected top-level parameter keys
+  const unexpectedRes = await boardTool.execute(
+    "tc-bv-unexp",
+    { action: "read", extra: true },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(unexpectedRes.isError, true);
+  assert.ok(JSON.parse(unexpectedRes.content[0].text).reason.includes('Unexpected parameter: "extra"'));
+
+  // 3. Missing / unknown / invalid action
+  for (const badAction of [undefined, null, 123, true, "", "unknown", "invalid", "READ", "WRITE"]) {
+    const res = await boardTool.execute("tc-bv-act", { action: badAction }, undefined, undefined, ctx);
+    assert.equal(res.isError, true);
+    assert.ok(JSON.parse(res.content[0].text).reason.includes("action must be one of: read, write"));
+  }
+
+  // Missing action key in object
+  const missingActionRes = await boardTool.execute("tc-bv-noact", {}, undefined, undefined, ctx);
+  assert.equal(missingActionRes.isError, true);
+  assert.ok(JSON.parse(missingActionRes.content[0].text).reason.includes("action must be one of: read, write"));
+
+  // 4. action: "read" rejects baseRevision and markdown
+  const readRevRes = await boardTool.execute(
+    "tc-bv-rd-rev",
+    { action: "read", baseRevision: 0 },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(readRevRes.isError, true);
+  assert.equal(JSON.parse(readRevRes.content[0].text).reason, 'Unexpected parameter for action "read": baseRevision');
+
+  const readMdRes = await boardTool.execute(
+    "tc-bv-rd-md",
+    { action: "read", markdown: "# Hello" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(readMdRes.isError, true);
+  assert.equal(JSON.parse(readMdRes.content[0].text).reason, 'Unexpected parameter for action "read": markdown');
+
+  const readBothRes = await boardTool.execute(
+    "tc-bv-rd-both",
+    { action: "read", baseRevision: 0, markdown: "# Hello" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(readBothRes.isError, true);
+  assert.equal(JSON.parse(readBothRes.content[0].text).reason, 'Unexpected parameter for action "read": baseRevision');
+
+  // 5. action: "write" requires both baseRevision and markdown (when /pet-board-write is on)
   await boardWriteCmd.handler("on", ctx);
 
-  // 1. pet_board_read parameter validation
-  const readBadParams = await readTool.execute("tc-r-1", "bad-params", undefined, undefined, ctx);
-  assert.equal(readBadParams.isError, true);
-  assert.equal(JSON.parse(readBadParams.content[0].text).reason, "Parameters must be an object");
+  // Missing baseRevision
+  const writeNoRevRes = await boardTool.execute(
+    "tc-bv-wr-norev",
+    { action: "write", markdown: "# Hello" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(writeNoRevRes.isError, true);
+  assert.equal(JSON.parse(writeNoRevRes.content[0].text).reason, "baseRevision must be a non-negative safe integer");
 
-  const readUnexpected = await readTool.execute("tc-r-2", { extra: true }, undefined, undefined, ctx);
-  assert.equal(readUnexpected.isError, true);
-  assert.ok(JSON.parse(readUnexpected.content[0].text).reason.includes('Unexpected parameter: "extra"'));
-
-  // 2. pet_board_write parameter validation
-  const writeBadParams = await writeTool.execute("tc-w-1", null, undefined, undefined, ctx);
-  assert.equal(writeBadParams.isError, true);
-  assert.equal(JSON.parse(writeBadParams.content[0].text).reason, "Parameters must be an object");
-
-  const writeUnexpected = await writeTool.execute("tc-w-2", { baseRevision: 0, markdown: "", foo: 1 }, undefined, undefined, ctx);
-  assert.equal(writeUnexpected.isError, true);
-  assert.ok(JSON.parse(writeUnexpected.content[0].text).reason.includes('Unexpected parameter: "foo"'));
-
-  // baseRevision: must be non-negative safe integer
-  for (const badRev of [-1, 1.5, NaN, Infinity, -Infinity, "0", null, undefined, {}]) {
-    const res = await writeTool.execute("tc-w-rev", { baseRevision: badRev, markdown: "test" }, undefined, undefined, ctx);
+  // Invalid baseRevision: must be non-negative safe integer
+  for (const badRev of [-1, 1.5, NaN, Infinity, -Infinity, "0", null, undefined, {}, []]) {
+    const res = await boardTool.execute(
+      "tc-bv-wr-badrev",
+      { action: "write", baseRevision: badRev, markdown: "test" },
+      undefined,
+      undefined,
+      ctx
+    );
     assert.equal(res.isError, true);
     assert.ok(JSON.parse(res.content[0].text).reason.includes("baseRevision must be a non-negative safe integer"));
   }
 
-  // markdown: must be string
-  for (const badMd of [123, null, undefined, {}, []]) {
-    const res = await writeTool.execute("tc-w-md", { baseRevision: 0, markdown: badMd }, undefined, undefined, ctx);
+  // Missing markdown
+  const writeNoMdRes = await boardTool.execute(
+    "tc-bv-wr-nomd",
+    { action: "write", baseRevision: 0 },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(writeNoMdRes.isError, true);
+  assert.equal(JSON.parse(writeNoMdRes.content[0].text).reason, "markdown must be a string");
+
+  // Invalid markdown: must be string
+  for (const badMd of [123, null, undefined, {}, [], true]) {
+    const res = await boardTool.execute(
+      "tc-bv-wr-badmd",
+      { action: "write", baseRevision: 0, markdown: badMd },
+      undefined,
+      undefined,
+      ctx
+    );
     assert.equal(res.isError, true);
     assert.ok(JSON.parse(res.content[0].text).reason.includes("markdown must be a string"));
   }
 
   // markdown: byte length <= 8192 bytes
   const oversizedMd = "a".repeat(8193);
-  const resOver = await writeTool.execute("tc-w-over", { baseRevision: 0, markdown: oversizedMd }, undefined, undefined, ctx);
+  const resOver = await boardTool.execute(
+    "tc-bv-wr-over",
+    { action: "write", baseRevision: 0, markdown: oversizedMd },
+    undefined,
+    undefined,
+    ctx
+  );
   assert.equal(resOver.isError, true);
   assert.ok(JSON.parse(resOver.content[0].text).reason.includes("markdown byte length exceeds maximum 8192 UTF-8 bytes"));
 
   // markdown: disallowed C0/C1 control characters
   for (const badChar of ["\x00", "\x01", "\x08", "\x0B", "\x0C", "\x0E", "\x1F", "\x7F", "\x80", "\x9F"]) {
-    const resCtrl = await writeTool.execute("tc-w-ctrl", { baseRevision: 0, markdown: `Hello${badChar}World` }, undefined, undefined, ctx);
+    const resCtrl = await boardTool.execute(
+      "tc-bv-wr-ctrl",
+      { action: "write", baseRevision: 0, markdown: `Hello${badChar}World` },
+      undefined,
+      undefined,
+      ctx
+    );
     assert.equal(resCtrl.isError, true);
     assert.ok(JSON.parse(resCtrl.content[0].text).reason.includes("markdown contains disallowed control characters"));
   }
 });
 
-// ── 8. Remote Wire Requests, OCC Conflict Handling & Sanitized Responses ──────
+// ── 9. Remote Wire Requests, OCC Conflict Handling & Sanitized Responses ──────
 
 test("exact board read and write remote wire requests, OCC conflict handling, and sanitized responses", async () => {
   const requests = [];
@@ -938,8 +1220,8 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
   try {
     const { tools, commands } = registerComponents();
     const boardWriteCmd = commands.get("pet-board-write");
-    const readTool = tools.get("pet_board_read");
-    const writeTool = tools.get("pet_board_write");
+    const boardTool = tools.get("pet_board");
+    assert.ok(boardTool);
 
     const rawSessionId = "pi:test-session-board";
     const ctx = makeCtx(rawSessionId);
@@ -947,8 +1229,8 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     // Enable board write
     await boardWriteCmd.handler("on", ctx);
 
-    // ── 1. pet_board_read when status is none ──
-    const read1 = await readTool.execute("tc-read-1", {}, undefined, undefined, ctx);
+    // ── 1. pet_board (action: "read" when status is none) ──
+    const read1 = await boardTool.execute("tc-read-1", { action: "read" }, undefined, undefined, ctx);
     assert.equal(read1.isError, false);
     assert.equal(requests.length, 1);
     const req1 = requests[0];
@@ -977,11 +1259,11 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     assert.equal(read1Parsed.status, "none");
     assert.equal(read1Parsed.board, undefined);
 
-    // ── 2. pet_board_write initial write (baseRevision 0) ──
+    // ── 2. pet_board (action: "write", initial write with baseRevision 0) ──
     const initialMarkdown = "# Team Board\n\n- Task 1: Complete tests\t[done]\r\n- Task 2: Review PR 🚀";
-    const write1 = await writeTool.execute(
+    const write1 = await boardTool.execute(
       "tc-write-1",
-      { baseRevision: 0, markdown: initialMarkdown },
+      { action: "write", baseRevision: 0, markdown: initialMarkdown },
       undefined,
       undefined,
       ctx
@@ -1021,8 +1303,8 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     assert.equal(write1Parsed.board.updatedAtMs, undefined);
     assert.deepEqual(write1Parsed.board.updatedBy, { displayName: "Pi Writer", role: "member" });
 
-    // ── 3. pet_board_read after write ──
-    const read2 = await readTool.execute("tc-read-2", {}, undefined, undefined, ctx);
+    // ── 3. pet_board (action: "read" after write) ──
+    const read2 = await boardTool.execute("tc-read-2", { action: "read" }, undefined, undefined, ctx);
     assert.equal(read2.isError, false);
     assert.equal(requests.length, 3);
     const read2Json = read2.content[0].text;
@@ -1037,10 +1319,10 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
     assert.equal(read2Parsed.board.markdown, initialMarkdown);
     assert.deepEqual(read2Parsed.board.updatedBy, { displayName: "Pi Author", role: "leader" });
 
-    // ── 4. pet_board_write 409 conflict on stale baseRevision ──
-    const writeConflict = await writeTool.execute(
+    // ── 4. pet_board (action: "write", 409 conflict on stale baseRevision) ──
+    const writeConflict = await boardTool.execute(
       "tc-write-conflict",
-      { baseRevision: 0, markdown: "# Stale Write" }, // stale: baseRevision 0 instead of 1
+      { action: "write", baseRevision: 0, markdown: "# Stale Write" }, // stale: baseRevision 0 instead of 1
       undefined,
       undefined,
       ctx
@@ -1071,7 +1353,7 @@ test("exact board read and write remote wire requests, OCC conflict handling, an
   }
 });
 
-// ── 9. Local Wire Requests ───────────────────────────────────────────────────
+// ── 10. Local Wire Requests ───────────────────────────────────────────────────
 
 test("exact board read and write local wire requests", async () => {
   const requests = [];
@@ -1137,8 +1419,8 @@ test("exact board read and write local wire requests", async () => {
   try {
     const { tools, commands } = registerComponents();
     const boardWriteCmd = commands.get("pet-board-write");
-    const readTool = tools.get("pet_board_read");
-    const writeTool = tools.get("pet_board_write");
+    const boardTool = tools.get("pet_board");
+    assert.ok(boardTool);
 
     const rawSessionId = "pi:test-session-local";
     const ctx = makeCtx(rawSessionId);
@@ -1146,7 +1428,7 @@ test("exact board read and write local wire requests", async () => {
     await boardWriteCmd.handler("on", ctx);
 
     // Read
-    const readRes = await readTool.execute("tc-loc-r", {}, undefined, undefined, ctx);
+    const readRes = await boardTool.execute("tc-loc-r", { action: "read" }, undefined, undefined, ctx);
     assert.equal(readRes.isError, false);
     assert.equal(requests[0].path, "/pet-team/board/read");
     assert.equal(requests[0].headers["x-clawd-routing-nonce"], undefined); // No routing nonce for local mode
@@ -1158,7 +1440,13 @@ test("exact board read and write local wire requests", async () => {
     });
 
     // Write
-    const writeRes = await writeTool.execute("tc-loc-w", { baseRevision: 3, markdown: "# Updated Local" }, undefined, undefined, ctx);
+    const writeRes = await boardTool.execute(
+      "tc-loc-w",
+      { action: "write", baseRevision: 3, markdown: "# Updated Local" },
+      undefined,
+      undefined,
+      ctx
+    );
     assert.equal(writeRes.isError, false);
     assert.equal(requests[1].path, "/pet-team/board/write");
     assert.equal(requests[1].headers["x-clawd-routing-nonce"], undefined);
@@ -1178,7 +1466,7 @@ test("exact board read and write local wire requests", async () => {
   }
 });
 
-// ── 10. Unit sanitization tests for Board ────────────────────────────────────
+// ── 11. Unit sanitization tests for Board ───────────────────────────────────
 
 test("sanitizeBoardDetails, sanitizeBoardObject, and sanitizeBoardUpdatedBy enforce strict projections and leak prevention", () => {
   // 1. UpdatedBy sanitization

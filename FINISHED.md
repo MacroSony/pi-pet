@@ -2,6 +2,13 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-13 — Five-tool public surface complete
+
+- Consolidated the three model-facing Team tools into `pet_team(action="status|create|dissolve", ...)` and the two Board tools into `pet_board(action="read|write", ...)`. Together with `pet_express`, `pet_list_sessions`, and `pet_send`, the public surface is now exactly five tools.
+- Removed the former standalone names without compatibility shims, avoiding a temporary 13-tool migration surface. Separate coordinator HTTP endpoints, request kinds, authorization gates, Board OCC, and wire contracts remain unchanged behind extension dispatch.
+- Added strict action-specific validation so optional union fields cannot cross action boundaries. Human renderers and model projections dispatch by sanitized response kind/status and continue to hide handles, IDs, paths, tokens, timestamps, and redundant Board write echoes.
+- Updated current README, roadmap, and contract references to the five-tool syntax. Root verification passed **324/324**, plus syntax and whitespace checks.
+
 ## 2026-09-13 — M3c.1 visible Team and read-only Board automation complete
 
 - Added a presentation-safe Team projection sourced from the canonical Team/Board stores. Pet status files contain only Team name, caller role, sanitized member display/role/state/host, and Board status/revision/attribution/Markdown; no Team/member/session identity, capability handle/token, cwd or file path enters the Board webview.
@@ -10,13 +17,13 @@
 - Team create/dissolve and successful Board writes now trigger an immediate presentation-only refresh rather than waiting for a session heartbeat. The runtime deep-copies and content-compares Team projections to preserve write deduplication.
 - Added a dedicated least-privilege Tauri capability for the dynamic Board window. It can listen for status events and close itself, but cannot emit events, drag the pet, or set window positions.
 - Fixed the root Clawd presentation adapter to consume the M3c.0 `displayTitle`, so native Pi `/name` and deterministic duplicate-name suffixes now reach the Tauri pet label.
-- Initial Windows GUI smoke found that creating the dynamic WebView from a synchronous Tauri command deadlocked WebView2, producing the exact blank, unclosable window observed in Tauri's own API warning. The hotfix makes creation async, makes Board DOM initialization race-safe, isolates main/Board window events, and uses an exclusive stale-recoverable per-Team process lock so member pets cannot spawn duplicate Boards. Post-fix renderer verification passed JS **63/63**, Rust **104/104**, optimized build, and independent blocker review; Windows resmoke remains before release acceptance.
+- Initial Windows GUI smoke found that creating the dynamic WebView from a synchronous Tauri command deadlocked WebView2, producing the exact blank, unclosable window observed in Tauri's own API warning. The hotfix makes creation async, makes Board DOM initialization race-safe, isolates main/Board window events, and uses an exclusive stale-recoverable per-Team process lock so member pets cannot spawn duplicate Boards. Post-fix renderer verification passed JS **63/63**, Rust **104/104**, optimized build, and independent blocker review. Windows resmoke then passed content display, close-without-dissolve and reopen, cross-member singleton suppression, and live revision/Markdown refresh after writes.
 - The wider M3c.1 verification remains root **323/323** and Clawd focused **617/617**.
 
 ## 2026-09-13 — M3c.0 clean tool output and distinct-session automation complete
 
 - Preserved full coordinator wire contracts while reducing model-visible Pi Pet tool results to operational fields. Catalog and active Team projections retain opaque handles only where the Agent needs them for routing; expression/send receipts, envelope IDs, timestamps, fixed capabilities and redundant Board write echoes no longer consume model context.
-- Added custom human `renderCall` / `renderResult` for all eight Pi Pet tools. Collapsed and expanded TUI views show concise named summaries and never render raw `psh_` handles, internal IDs, paths, tokens, timestamps or protocol JSON; expanded Board read may show its bounded Markdown.
+- Added custom human `renderCall` / `renderResult` for all eight Pi Pet tools that existed at this milestone. Collapsed and expanded TUI views show concise named summaries and never render raw `psh_` handles, internal IDs, paths, tokens, timestamps or protocol JSON; expanded Board read may show its bounded Markdown. The later five-tool consolidation retained these renderers behind action dispatch.
 - Pi's native `/name` now flows through the managed extension using bounded `session_title` metadata. `session_info_changed` sends a metadata-only refresh, and explicit native-name clearing restores the cwd/id fallback without changing lifecycle state or recent events.
 - Active human-visible sessions with a case-insensitive duplicate title on the same host now receive deterministic collision-only suffixes such as `Assistant #A1B2`. Unique names and same names on different hosts remain uncluttered; sleeping, headless and hidden sessions do not create collision noise.
 - Verification passed: root **320/320**; focused Clawd naming/state/route/managed-extension/peer/Team regression **638/638**; independent review found no blocker. Windows TUI and duplicate-session live smoke remain before release acceptance.
@@ -52,7 +59,7 @@
 ## 2026-09-13 — M3a.2-lite autonomous Team complete
 
 - Added current-attach `/pet-team-autonomy on|off|status`, default off and reset on session start, shutdown and reload.
-- Added Agent-facing `pet_team_create(name, targets)`, `pet_team_status()` and leader-only `pet_team_dissolve()`. Mutations require standing user authorization; read-only status does not.
+- Added the original Agent-facing `pet_team_create(name, targets)`, `pet_team_status()` and leader-only `pet_team_dissolve()` surface. Mutations require standing user authorization; read-only status does not. These were later consolidated into `pet_team(action, ...)`.
 - Reused existing caller/generation-bound `psh_` catalog handles for machine-to-machine member selection. Team creation consumes and resolves them without persistence; reply handles are purpose-rejected without being burned.
 - Wired exact `/pet-team/status`, `/pet-team/create` and `/pet-team/dissolve` routes through local Clawd and existing nonce-gated Secure Remote SSH ingress. Team membership adds no messaging/wake/session authority; teammates continue using `pet_send`.
 - Enforced one active Team per member for the lite slice, caller-as-leader, 1–7 targets, strict request keys/body caps, sanitized projections and no raw session/pet IDs, tokens, paths or transcripts.
@@ -64,7 +71,7 @@
 - Added a neutral `createTeamBoardStore()` with one strict, atomic `board-<teamId>.json` record per Team, synthetic revision 0, whole-document OCC, monotonic timestamps, last-writer identity and an 8192-byte UTF-8 Markdown cap.
 - Board reads require authoritative active Team membership and allow observers; writes reject observers and require exact `baseRevision`. Corrupt, oversized or mismatched persisted records fail closed.
 - Added exact coordinator routes `POST /pet-team/board/read|write`, reusing caller capability authentication, active-Team resolution and Secure Remote SSH nonce gating. Responses expose only revision, Markdown, update time and sanitized last-writer attribution.
-- Added default-off, current-session `/pet-board-write on|off|status`, read-only `pet_board_read()` and gated `pet_board_write(baseRevision, markdown)`. Session start/shutdown/reload reset write authorization.
+- Added default-off, current-session `/pet-board-write on|off|status`, plus the original read-only `pet_board_read()` and gated `pet_board_write(baseRevision, markdown)` surface. Session start/shutdown/reload reset write authorization. The two tools were later consolidated into `pet_board(action, ...)`.
 - Board content is explicitly teammate-authored data rather than authenticated user instruction. Writes do not send peer messages, wake sessions or mutate Team membership.
 - Automated verification passed: root **302/302**; focused Clawd Team/peer/server/SSH/managed-extension regression **162/162**.
 - Real Windows/Homelab smoke passed: the leader created revision 1 from the empty revision 0 Board; Homelab read revision 1, preserved the document and appended its finding at revision 2; attribution identified the Homelab member. A deliberate stale revision 0 write returned conflict with `currentRevision:2`, and a subsequent read proved the rejected marker was absent and revision 2 content remained intact.

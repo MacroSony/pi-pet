@@ -21,13 +21,13 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - Pi `pet_express(text?, emotion?)` with validated event/receipt delivery and renderer bubbles, both locally and through the existing Clawd Remote SSH path.
 - Local and Secure Remote SSH desktop-to-agent input (Pi own-session inbox v1): send text from the pet UI through local Clawd enqueue, then consume it in the bound Pi session via a local mailbox or capability-scoped remote claim/settle and `pi.sendUserMessage`.
 - Bounded peer messaging, receiver-local opt-in wake, autonomous lite Teams, and a Team-scoped revisioned Markdown Board with OCC.
-- Distinct native Pi `/name` presentation, deterministic same-host collision suffixes, and low-noise custom renderers for all eight Pi Pet tools.
+- Distinct native Pi `/name` presentation, deterministic same-host collision suffixes, and low-noise custom renderers for the fixed five-tool Pi Pet surface: `pet_express`, `pet_list_sessions`, `pet_send`, `pet_team`, and `pet_board`.
 - Presentation-only Team badges and an independent read-only Team Board window showing sanitized member presence, revision, attribution, and Markdown as plain text. Team create/dissolve and Board writes refresh it without granting new authority.
 - Presentation-write deduplication, disconnect/reconnect handling and renderer relaunch rules.
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.
 
-**Not implemented yet:** pet-originated bounded chat history, Team gathering/disperse movement, richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. Team badge/Board UI is automatically tested but still needs Windows GUI smoke before release acceptance. See [the implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
+**Not implemented yet:** pet-originated bounded chat history, Team gathering/disperse movement, richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. The Team badge/Board UI has passed both automated coverage and Windows GUI smoke. See [the implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
 
 ## Source checkout
 

@@ -2,7 +2,7 @@
 
 > Status: **parked productization contract**. The Lean active-message decision gate passed, but this hardened Team/ACL design remains conditional rather than a prerequisite for the current PoC.
 >
-> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in. M3c.1 adds a presentation-only Team badge and independent read-only Board window over an ID-free projection.
+> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team(action="status|create|dissolve", ...)`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds `pet_board(action="read|write", ...)`, a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in. M3c.1 adds a presentation-only Team badge and independent read-only Board window over an ID-free projection. The current model-facing surface is fixed at five tools; coordinator routes remain separate internal wire endpoints.
 >
 > Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/editing UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
 
@@ -64,7 +64,7 @@ The neutral runtime receives only trusted internal pet identities from the coord
 
 ## 3. Team projection and handles
 
-Agent-facing `pet_team_status()` returns only Teams containing the caller. Members are projected as:
+Agent-facing `pet_team(action="status")` returns only Teams containing the caller. Members are projected as:
 
 ```json
 {
@@ -92,9 +92,9 @@ Team revision invalidates handles for authorization changes. A harmless Team ren
 
 ## 4. Agent tools
 
-### 4.1 `pet_team_status()`
+### 4.1 `pet_team(action="status")`
 
-Reads the caller's active Team projection. It cannot enumerate unrelated Teams.
+Reads the caller's active Team projection. It cannot enumerate unrelated Teams. In the current lite implementation, `create` and `dissolve` are additional actions on this same tool and require the separate `/pet-team-autonomy` user opt-in.
 
 ### 4.2 `pet_team_send(target, text, wake?)`
 

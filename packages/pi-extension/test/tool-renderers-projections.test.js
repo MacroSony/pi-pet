@@ -33,9 +33,11 @@ const {
   projectExpressForModel,
   projectCatalogForModel,
   projectSendForModel,
+  projectTeamForModel,
   projectTeamStatusForModel,
   projectTeamCreateForModel,
   projectTeamDissolveForModel,
+  projectBoardForModel,
   projectBoardReadForModel,
   projectBoardWriteForModel,
   renderExpressCall,
@@ -44,12 +46,16 @@ const {
   renderListSessionsResult,
   renderSendCall,
   renderSendResult,
+  renderTeamCall,
+  renderTeamResult,
   renderTeamCreateCall,
   renderTeamCreateResult,
   renderTeamStatusCall,
   renderTeamStatusResult,
   renderTeamDissolveCall,
   renderTeamDissolveResult,
+  renderBoardCall,
+  renderBoardResult,
   renderBoardReadCall,
   renderBoardReadResult,
   renderBoardWriteCall,
@@ -86,20 +92,17 @@ function registerAllTools(customDependencies = {}) {
 
 // ── 1. Tool Registration & Custom Renderer Attachment ────────────────────────
 
-test("all eight tools register custom renderCall and renderResult functions", () => {
+test("all five tools register custom renderCall and renderResult functions", () => {
   const tools = registerAllTools({ Text: CustomTuiText });
   const toolNames = [
     "pet_express",
     "pet_list_sessions",
     "pet_send",
-    "pet_team_create",
-    "pet_team_status",
-    "pet_team_dissolve",
-    "pet_board_read",
-    "pet_board_write",
+    "pet_team",
+    "pet_board",
   ];
 
-  assert.equal(tools.size, 8);
+  assert.equal(tools.size, 5);
   for (const name of toolNames) {
     const tool = tools.get(name);
     assert.ok(tool, `tool ${name} must be registered`);
@@ -499,10 +502,10 @@ test("pet_send renderCall and renderResult (no target handle leak, collapsed and
   assertNoSecretLeaks(resExpanded, "send result expanded");
 });
 
-test("pet_team_create renderCall and renderResult (no handles leak, collapsed and expanded)", () => {
-  const call = renderTeamCreateCall({ name: "Dev Squad", targets: ["psh_secret_handle_12345", "psh_secret_handle_67890"] }).toString();
-  assert.equal(call, 'pet_team_create: "Dev Squad" (2 members)');
-  assertNoSecretLeaks(call, "team_create call");
+test("pet_team create renderCall and renderResult (no handles leak, collapsed and expanded)", () => {
+  const call = renderTeamCall({ action: "create", name: "Dev Squad", targets: ["psh_secret_handle_12345", "psh_secret_handle_67890"] }).toString();
+  assert.equal(call, 'pet_team create: "Dev Squad" (2 members)');
+  assertNoSecretLeaks(call, "team create call");
 
   const details = {
     schemaVersion: "1",
@@ -519,27 +522,28 @@ test("pet_team_create renderCall and renderResult (no handles leak, collapsed an
     },
   };
 
-  const resCollapsed = renderTeamCreateResult({ isError: false, details }, { expanded: false }).toString();
+  const resCollapsed = renderTeamResult({ isError: false, details }, { expanded: false }).toString();
   assert.equal(resCollapsed, 'Team "Dev Squad" created (rev 1, 2 members)');
-  assertNoSecretLeaks(resCollapsed, "team_create collapsed");
+  assertNoSecretLeaks(resCollapsed, "team create collapsed");
 
-  const resExpanded = renderTeamCreateResult({ isError: false, details }, { expanded: true }).toString();
+  const resExpanded = renderTeamResult({ isError: false, details }, { expanded: true }).toString();
   assert.ok(resExpanded.includes('Team: "Dev Squad" (Active, Revision 1)'));
   assert.ok(resExpanded.includes("Members (2):"));
   assert.ok(resExpanded.includes("• Alice @ local — leader (idle)"));
   assert.ok(resExpanded.includes("• Bob @ homelab — member (running)"));
-  assertNoSecretLeaks(resExpanded, "team_create expanded");
+  assertNoSecretLeaks(resExpanded, "team create expanded");
 });
 
-test("pet_team_status renderCall and renderResult (none and active team)", () => {
-  const call = renderTeamStatusCall({}).toString();
-  assert.equal(call, "pet_team_status");
+test("pet_team status renderCall and renderResult (none and active team)", () => {
+  const call = renderTeamCall({ action: "status" }).toString();
+  assert.equal(call, "pet_team status");
 
-  const resNone = renderTeamStatusResult({ isError: false, details: { status: "none" } }, { expanded: false }).toString();
+  const resNone = renderTeamResult({ isError: false, details: { schemaVersion: "1", kind: "team_status", status: "none" } }, { expanded: false }).toString();
   assert.equal(resNone, "No active team");
 
   const activeDetails = {
     schemaVersion: "1",
+    kind: "team_status",
     status: "active",
     team: {
       name: "Alpha Team",
@@ -552,38 +556,39 @@ test("pet_team_status renderCall and renderResult (none and active team)", () =>
     },
   };
 
-  const resCollapsed = renderTeamStatusResult({ isError: false, details: activeDetails }, { expanded: false }).toString();
+  const resCollapsed = renderTeamResult({ isError: false, details: activeDetails }, { expanded: false }).toString();
   assert.equal(resCollapsed, "Team: Alpha Team (member) — 2 members (rev 2)");
-  assertNoSecretLeaks(resCollapsed, "team_status collapsed");
+  assertNoSecretLeaks(resCollapsed, "team status collapsed");
 
-  const resExpanded = renderTeamStatusResult({ isError: false, details: activeDetails }, { expanded: true }).toString();
+  const resExpanded = renderTeamResult({ isError: false, details: activeDetails }, { expanded: true }).toString();
   assert.ok(resExpanded.includes('Team: "Alpha Team" (Revision 2)'));
   assert.ok(resExpanded.includes("Your Role: member"));
   assert.ok(resExpanded.includes("• Worker Pi @ homelab — member (running)"));
-  assertNoSecretLeaks(resExpanded, "team_status expanded");
+  assertNoSecretLeaks(resExpanded, "team status expanded");
 });
 
-test("pet_team_dissolve renderCall and renderResult", () => {
-  const call = renderTeamDissolveCall({}).toString();
-  assert.equal(call, "pet_team_dissolve");
+test("pet_team dissolve renderCall and renderResult", () => {
+  const call = renderTeamCall({ action: "dissolve" }).toString();
+  assert.equal(call, "pet_team dissolve");
 
-  const resCollapsed = renderTeamDissolveResult({ isError: false, details: { status: "dissolved" } }, { expanded: false }).toString();
+  const resCollapsed = renderTeamResult({ isError: false, details: { schemaVersion: "1", kind: "team_dissolve", status: "dissolved" } }, { expanded: false }).toString();
   assert.equal(resCollapsed, "Team dissolved");
 
-  const resExpanded = renderTeamDissolveResult({ isError: false, details: { status: "dissolved" } }, { expanded: true }).toString();
+  const resExpanded = renderTeamResult({ isError: false, details: { schemaVersion: "1", kind: "team_dissolve", status: "dissolved" } }, { expanded: true }).toString();
   assert.equal(resExpanded, "Active team has been dissolved successfully.");
 });
 
-test("pet_board_read renderCall and renderResult (bounded Markdown preview)", () => {
-  const call = renderBoardReadCall({}).toString();
-  assert.equal(call, "pet_board_read");
+test("pet_board read renderCall and renderResult (bounded Markdown preview)", () => {
+  const call = renderBoardCall({ action: "read" }).toString();
+  assert.equal(call, "pet_board read");
 
-  const resNone = renderBoardReadResult({ isError: false, details: { status: "none" } }, { expanded: false }).toString();
+  const resNone = renderBoardResult({ isError: false, details: { schemaVersion: "1", kind: "team_board_read", status: "none" } }, { expanded: false }).toString();
   assert.equal(resNone, "No active team board");
 
   const mdContent = "# Shared Notes\n\n1. First task\n2. Second task";
   const details = {
     schemaVersion: "1",
+    kind: "team_board_read",
     status: "active",
     board: {
       revision: 2,
@@ -593,24 +598,26 @@ test("pet_board_read renderCall and renderResult (bounded Markdown preview)", ()
     },
   };
 
-  const resCollapsed = renderBoardReadResult({ isError: false, details }, { expanded: false }).toString();
+  const resCollapsed = renderBoardResult({ isError: false, details }, { expanded: false }).toString();
   assert.ok(resCollapsed.includes("Team board (rev 2, by Pi Author (leader)): 4 lines"));
-  assertNoSecretLeaks(resCollapsed, "board_read collapsed");
+  assertNoSecretLeaks(resCollapsed, "board read collapsed");
 
-  const resExpanded = renderBoardReadResult({ isError: false, details }, { expanded: true }).toString();
+  const resExpanded = renderBoardResult({ isError: false, details }, { expanded: true }).toString();
   assert.ok(resExpanded.includes("Team Board (Revision 2, updated by Pi Author (leader)):"));
   assert.ok(resExpanded.includes(mdContent));
-  assertNoSecretLeaks(resExpanded, "board_read expanded");
+  assertNoSecretLeaks(resExpanded, "board read expanded");
 });
 
-test("pet_board_write renderCall and renderResult (summarizes revision/conflict without echoing Markdown)", () => {
+test("pet_board write renderCall and renderResult (summarizes revision/conflict without echoing Markdown)", () => {
   const md = "# Secret project plan\nVery large document content";
-  const call = renderBoardWriteCall({ baseRevision: 1, markdown: md }).toString();
-  assert.equal(call, `pet_board_write (baseRevision: 1, ${Buffer.byteLength(md, "utf8")} bytes)`);
+  const call = renderBoardCall({ action: "write", baseRevision: 1, markdown: md }).toString();
+  assert.equal(call, `pet_board write (baseRevision: 1, ${Buffer.byteLength(md, "utf8")} bytes)`);
   assert.equal(call.includes("# Secret project plan"), false, "Call summary must not echo Markdown text");
 
   // Success case
   const writeSuccess = {
+    schemaVersion: "1",
+    kind: "team_board_write",
     status: "updated",
     board: {
       revision: 2,
@@ -618,28 +625,31 @@ test("pet_board_write renderCall and renderResult (summarizes revision/conflict 
       updatedBy: { displayName: "Pi Author", role: "leader" },
     },
   };
-  const resSuccessCollapsed = renderBoardWriteResult({ isError: false, details: writeSuccess }, { expanded: false }).toString();
+  const resSuccessCollapsed = renderBoardResult({ isError: false, details: writeSuccess }, { expanded: false }).toString();
   assert.equal(resSuccessCollapsed, "Team board updated to revision 2");
   assert.equal(resSuccessCollapsed.includes(md), false);
 
-  const resSuccessExpanded = renderBoardWriteResult({ isError: false, details: writeSuccess }, { expanded: true }).toString();
+  const resSuccessExpanded = renderBoardResult({ isError: false, details: writeSuccess }, { expanded: true }).toString();
   assert.ok(resSuccessExpanded.includes("Team board updated successfully to revision 2."));
   assert.ok(resSuccessExpanded.includes("Updated by: Pi Author (leader)"));
   assert.equal(resSuccessExpanded.includes(md), false, "Write result must not echo Markdown");
 
   // Conflict case
   const writeConflict = {
+    schemaVersion: "1",
+    kind: "team_board_write",
     status: "conflict",
     currentRevision: 3,
     reason: "Revision mismatch",
   };
-  const resConflictCollapsed = renderBoardWriteResult({ isError: true, details: writeConflict }, { expanded: false }).toString();
+  const resConflictCollapsed = renderBoardResult({ isError: true, details: writeConflict }, { expanded: false }).toString();
   assert.equal(resConflictCollapsed, "Board update conflict (current rev 3): Revision mismatch");
 
-  const resConflictExpanded = renderBoardWriteResult({ isError: true, details: writeConflict }, { expanded: true }).toString();
+  const resConflictExpanded = renderBoardResult({ isError: true, details: writeConflict }, { expanded: true }).toString();
   assert.ok(resConflictExpanded.includes("Board Write Conflict:"));
   assert.ok(resConflictExpanded.includes("Current server revision: 3"));
   assert.ok(resConflictExpanded.includes("Reason: Revision mismatch"));
+  assert.ok(resConflictExpanded.includes("Please re-read the board (pet_board action read) and merge changes."));
 });
 
 // ── 4. Robustness: Fault Tolerance with Partial/Null/Undefined Inputs ─────────
@@ -649,9 +659,11 @@ test("renderCall and renderResult tolerate undefined, null, empty, or partial in
     renderExpressCall,
     renderListSessionsCall,
     renderSendCall,
+    renderTeamCall,
     renderTeamCreateCall,
     renderTeamStatusCall,
     renderTeamDissolveCall,
+    renderBoardCall,
     renderBoardReadCall,
     renderBoardWriteCall,
   ];
@@ -668,9 +680,11 @@ test("renderCall and renderResult tolerate undefined, null, empty, or partial in
     renderExpressResult,
     renderListSessionsResult,
     renderSendResult,
+    renderTeamResult,
     renderTeamCreateResult,
     renderTeamStatusResult,
     renderTeamDissolveResult,
+    renderBoardResult,
     renderBoardReadResult,
     renderBoardWriteResult,
   ];

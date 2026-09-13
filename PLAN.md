@@ -124,10 +124,10 @@ Lean peer wake decision gate、M3a.2-lite autonomous Team 与 M3b-lite Board 均
 #### M3a.2-lite — Agent 自主拉群（完成）
 
 - `/pet-team-autonomy on|off|status` 是当前 attach 的用户 standing authorization；默认 off，不持久化，session start/shutdown/reload 清零。
-- Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team_create(name, targets)`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
+- Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team(action="create", name=..., targets=[...])`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
 - caller 自动成为 leader；targets 成为 member；每个 session 暂限一个 active Team。
-- `pet_team_status()` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
-- `pet_team_dissolve()` 仅 leader 且 autonomy enabled 时可用。
+- `pet_team(action="status")` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
+- `pet_team(action="dissolve")` 仅 leader 且 autonomy enabled 时可用。
 - Lite Team 本身只提供持久分组与发现信息，不自动授予 send/wake/session 权限，因此暂不做 target invite/accept。
 - 不新增 `pth_`、`pet_team_send`、角色编辑、Team UI、wake budget 或 hard lease。
 
@@ -138,24 +138,26 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 先验证共享状态本身是否有价值，而不是直接实现完整 kanban/patch 平台：
 
 - 每个 active Team 只有一份 canonical Markdown scratchpad，最多 8192 UTF-8 bytes，存放在 Windows Clawd coordinator。
-- `pet_board_read()` 对成员只读开放；返回 revision、Markdown 和最近更新者的脱敏 attribution。
+- `pet_board(action="read")` 对成员只读开放；返回 revision、Markdown 和最近更新者的脱敏 attribution。
 - `/pet-board-write on|off|status` 是当前 session 的写入授权，默认 off，session start/shutdown/reload 清零。
-- `pet_board_write(baseRevision, markdown)` 做全文原子替换；必须先读并提交精确 revision，冲突返回 current revision，不做 silent last-write-wins。
+- `pet_board(action="write", baseRevision=..., markdown=...)` 做全文原子替换；必须先读并提交精确 revision，冲突返回 current revision，不做 silent last-write-wins。
 - Board 内容是 teammate-authored shared data，不冒充 user instruction；写入不会自动发消息或唤醒其他 session。
 - Team dissolve 后旧 Board 保留在 coordinator 但不再可访问；历史、GC、恢复和导出后置。
 - 当前 whole-document write 是刻意的 PoC 简化；不声称满足下方完整结构化 Board contract。
 
 真实 Windows leader 与 Homelab member 已完成 revision 0→1→2 跨机读写、最近作者 attribution、stale revision 0 冲突拒绝和拒绝后内容完整性复查。M3b-lite 真机 gate 通过；完整结构化 Board 继续 parked，直到真实使用暴露 whole-document 模型的具体痛点。
 
-#### M3c.0 — Clean Tools 与可区分 Session（已实现 / 待 Windows 真机）
+#### M3c.0 — Clean Tools 与可区分 Session（完成）
 
+- model-facing surface 已固定为五个工具：`pet_express`、`pet_list_sessions`、`pet_send`、`pet_team(action, ...)`、`pet_board(action, ...)`。原三个 Team 工具和两个 Board 工具一次性迁移、不注册兼容 shim；coordinator endpoints 与 wire contracts 保持不变。
+- action-specific execute validation 拒绝不属于所选 action 的可选参数，避免合并 schema 放宽实际调用边界。
 - coordinator wire contract 保持完整；Agent-facing content 仅保留实际操作所需字段，删除 envelope、receipt IDs、timestamps、固定 capability 与 write echo 噪音。
 - `psh_` 仍只在 Agent 必须继续路由的 catalog / Team member projection 中保留；Pi TUI 的 custom `renderCall` / `renderResult` 对用户隐藏 handle 和内部 JSON，显示名称化摘要。
 - Pi managed extension 读取原生 `/name` session title；`session_info_changed` 用 metadata-only state update 即时传播，清空名称后恢复 cwd/id fallback，不制造生命周期事件。
 - 同 host 的 active、human-visible session 若显示名大小写不敏感地撞名，只给冲突组追加由 canonical identity 单向派生的稳定短标签（如 `Assistant #A1B2`）；不同 host、唯一名称、sleeping/headless/hidden session 不产生多余后缀。
 - raw session ID、pet ID、cwd、token 和完整 handle 不进入人类 renderer；重连顺序不影响短标签。
 
-#### M3c.1 — Visible Team 与只读 Board（已实现 / 待 Windows 真机）
+#### M3c.1 — Visible Team 与只读 Board（完成）
 
 - Clawd presentation adapter 从 canonical Team/Board store 生成独立于 Agent tool wire 的只读 projection；只包含 Team 名、caller role、最多 8 个成员的 displayName/role/state/host，以及 Board status/revision/updatedBy/markdown。
 - projection 不含 teamId、petId、raw session、cwd、`psh_`、token 或文件路径；Rust 再做 bounded typed validation，未知字段不会进入 webview。
@@ -185,7 +187,7 @@ Artifacts (references only)
 - Team / Board schema 和 ACL 属于 Pi Pet；Clawd 只托管 coordinator 和跨机路由。
 - canonical Board 位于 coordinator，不依赖跨机共享文件系统，也不复制 repo 文件。
 - 用户可在独立 Board 窗口中直接查看和编辑；用户修改同样带 revision 和审计来源。
-- 完整版 Agent 通过 `pet_board_read()` 和带 `baseRevision` 的受限 patch 操作修改；禁止全文覆盖共享 Markdown。M3b-lite 暂以 bounded whole-document OCC 验证产品价值。
+- 完整版 Agent 通过 `pet_board(action="read")` 和带 `baseRevision` 的受限 patch action 修改；禁止全文覆盖共享 Markdown。M3b-lite 暂以 bounded whole-document OCC 验证产品价值。
 - 所有条目记录作者、时间和 revision；冲突返回最新 revision，不能 last-write-wins 静默覆盖。
 - Board mutation 本身不自动唤醒全队；真正需要另一 Agent 处理时再通过 `pet_send` 通知。
 - 用户拥有最高权限。Leader 是 Team ACL 角色，不是 provider 或进程 owner。

@@ -121,17 +121,19 @@ function registerTools(pi = {}) {
 
 // ── 1. Exact Tool Registration & Schema ──────────────────────────────────────
 
-test("registers all eight tools: pet_express, pet_list_sessions, pet_send, pet_team_status, pet_team_create, pet_team_dissolve, pet_board_read, and pet_board_write", () => {
+test("registers all five tools: pet_express, pet_list_sessions, pet_send, pet_team, and pet_board", () => {
   const tools = registerTools();
-  assert.equal(tools.size, 8);
+  assert.equal(tools.size, 5);
   assert.ok(tools.has("pet_express"));
   assert.ok(tools.has("pet_list_sessions"));
   assert.ok(tools.has("pet_send"));
-  assert.ok(tools.has("pet_team_status"));
-  assert.ok(tools.has("pet_team_create"));
-  assert.ok(tools.has("pet_team_dissolve"));
-  assert.ok(tools.has("pet_board_read"));
-  assert.ok(tools.has("pet_board_write"));
+  assert.ok(tools.has("pet_team"));
+  assert.ok(tools.has("pet_board"));
+  assert.equal(tools.has("pet_team_status"), false);
+  assert.equal(tools.has("pet_team_create"), false);
+  assert.equal(tools.has("pet_team_dissolve"), false);
+  assert.equal(tools.has("pet_board_read"), false);
+  assert.equal(tools.has("pet_board_write"), false);
 
   const listDef = tools.get("pet_list_sessions");
   assert.equal(listDef.name, "pet_list_sessions");
@@ -159,38 +161,28 @@ test("registers all eight tools: pet_express, pet_list_sessions, pet_send, pet_t
   assert.equal(sendDef.parameters.properties.text.minLength, 1);
   assert.equal(sendDef.parameters.properties.text.maxLength, 2000);
 
-  const teamStatusDef = tools.get("pet_team_status");
-  assert.equal(teamStatusDef.name, "pet_team_status");
-  assert.equal(teamStatusDef.parameters.type, "object");
+  const teamDef = tools.get("pet_team");
+  assert.equal(teamDef.name, "pet_team");
+  assert.equal(teamDef.label, "Pet Team");
+  assert.equal(typeof teamDef.description, "string");
+  assert.equal(typeof teamDef.promptSnippet, "string");
+  assert.ok(Array.isArray(teamDef.promptGuidelines));
+  assert.equal(teamDef.parameters.type, "object");
+  assert.ok(teamDef.parameters.properties.action);
+  assert.equal(teamDef.parameters.properties.name.type, "string");
+  assert.equal(teamDef.parameters.properties.targets.type, "array");
 
-  const teamCreateDef = tools.get("pet_team_create");
-  assert.equal(teamCreateDef.name, "pet_team_create");
-  assert.equal(teamCreateDef.parameters.type, "object");
-  assert.equal(teamCreateDef.parameters.properties.name.type, "string");
-  assert.equal(teamCreateDef.parameters.properties.targets.type, "array");
-
-  const teamDissolveDef = tools.get("pet_team_dissolve");
-  assert.equal(teamDissolveDef.name, "pet_team_dissolve");
-  assert.equal(teamDissolveDef.parameters.type, "object");
-
-  const boardReadDef = tools.get("pet_board_read");
-  assert.equal(boardReadDef.name, "pet_board_read");
-  assert.equal(boardReadDef.label, "Read Pet Team Board");
-  assert.equal(typeof boardReadDef.description, "string");
-  assert.equal(typeof boardReadDef.promptSnippet, "string");
-  assert.ok(Array.isArray(boardReadDef.promptGuidelines));
-  assert.equal(boardReadDef.parameters.type, "object");
-
-  const boardWriteDef = tools.get("pet_board_write");
-  assert.equal(boardWriteDef.name, "pet_board_write");
-  assert.equal(boardWriteDef.label, "Write Pet Team Board");
-  assert.equal(typeof boardWriteDef.description, "string");
-  assert.equal(typeof boardWriteDef.promptSnippet, "string");
-  assert.ok(Array.isArray(boardWriteDef.promptGuidelines));
-  assert.equal(boardWriteDef.parameters.type, "object");
-  assert.equal(boardWriteDef.parameters.properties.baseRevision.type, "integer");
-  assert.equal(boardWriteDef.parameters.properties.markdown.type, "string");
-  assert.equal(boardWriteDef.parameters.properties.markdown.maxLength, 8192);
+  const boardDef = tools.get("pet_board");
+  assert.equal(boardDef.name, "pet_board");
+  assert.equal(boardDef.label, "Pet Team Board");
+  assert.equal(typeof boardDef.description, "string");
+  assert.equal(typeof boardDef.promptSnippet, "string");
+  assert.ok(Array.isArray(boardDef.promptGuidelines));
+  assert.equal(boardDef.parameters.type, "object");
+  assert.ok(boardDef.parameters.properties.action);
+  assert.equal(boardDef.parameters.properties.baseRevision.type, "integer");
+  assert.equal(boardDef.parameters.properties.markdown.type, "string");
+  assert.equal(boardDef.parameters.properties.markdown.maxLength, 8192);
 });
 
 // ── 2. Local Config & Remote Preference ──────────────────────────────────────
