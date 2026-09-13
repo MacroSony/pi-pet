@@ -159,7 +159,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 
 - Clawd presentation adapter 从 canonical Team/Board store 生成独立于 Agent tool wire 的只读 projection；只包含 Team 名、caller role、最多 8 个成员的 displayName/role/state/host，以及 Board status/revision/updatedBy/markdown。
 - projection 不含 teamId、petId、raw session、cwd、`psh_`、token 或文件路径；Rust 再做 bounded typed validation，未知字段不会进入 webview。
-- Team member pet 显示 clickable badge；点击后由该 pet 的 Tauri 进程创建一个普通、可缩放、可关闭的独立 `team-board` webview。关闭 Board 只影响窗口，不 dissolve Team。
+- Team member pet 显示 clickable badge；点击后由 Tauri 创建普通、可缩放、可关闭的独立 `team-board` webview。Windows 首次真机暴露同步 command 创建 WebView2 会死锁成不可关闭白窗，现已改为 async command；同 Team 的多个 pet 进程通过共享、可恢复的进程锁只保留一个 Board 窗口。关闭 Board 只影响窗口，不 dissolve Team。
 - Board Markdown 始终通过 `<pre>.textContent` 显示，不解析 HTML；Team/Board corrupt 或 projection 无效时 fail closed 为 unavailable。
 - Team create/dissolve 和成功 Board write 显式触发 presentation refresh，不等待下一次 harness heartbeat；status runtime 对 Team projection 做内容比较和深拷贝。
 - `team-board` 使用独立最小 Tauri capability，只允许基础 IPC、状态事件 listen 和关闭窗口，不继承 pet drag/position/event emit 权限。
@@ -309,7 +309,7 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 6. M3b-lite Board：Team-scoped revisioned Markdown、session-local write opt-in、read/write tools、OCC 与 attribution。（完成）
 7. 真实 Windows/Homelab read/write/conflict/content-integrity smoke。（完成；structured Board 继续 parked）
 8. M3c.0 Clean Tools + distinct sessions：低噪音 model projection、custom TUI renderer、Pi `/name` 与同 host 撞名短标签。（已实现；自动化通过，待 Windows 真机）
-9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（已实现；自动化通过，待 Windows 真机）
+9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（已实现；首次 Windows smoke 发现并修复 WebView2 同步创建死锁、跨 pet 重复窗口和 window-event 串扰，待 Windows 复测）
 10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（下一步）
 11. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。
 12. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。

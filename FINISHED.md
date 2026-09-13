@@ -10,7 +10,8 @@
 - Team create/dissolve and successful Board writes now trigger an immediate presentation-only refresh rather than waiting for a session heartbeat. The runtime deep-copies and content-compares Team projections to preserve write deduplication.
 - Added a dedicated least-privilege Tauri capability for the dynamic Board window. It can listen for status events and close itself, but cannot emit events, drag the pet, or set window positions.
 - Fixed the root Clawd presentation adapter to consume the M3c.0 `displayTitle`, so native Pi `/name` and deterministic duplicate-name suffixes now reach the Tauri pet label.
-- Verification passed: root **323/323**, renderer JS **60/60**, renderer Rust **99/99**, Clawd focused **617/617**, and optimized renderer build. Windows GUI/live Team smoke remains before release acceptance.
+- Initial Windows GUI smoke found that creating the dynamic WebView from a synchronous Tauri command deadlocked WebView2, producing the exact blank, unclosable window observed in Tauri's own API warning. The hotfix makes creation async, makes Board DOM initialization race-safe, isolates main/Board window events, and uses an exclusive stale-recoverable per-Team process lock so member pets cannot spawn duplicate Boards. Post-fix renderer verification passed JS **63/63**, Rust **104/104**, optimized build, and independent blocker review; Windows resmoke remains before release acceptance.
+- The wider M3c.1 verification remains root **323/323** and Clawd focused **617/617**.
 
 ## 2026-09-13 — M3c.0 clean tool output and distinct-session automation complete
 
