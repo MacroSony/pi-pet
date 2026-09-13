@@ -40,14 +40,15 @@
 - Automated verification passed: root **256/256**; focused Clawd Team/peer/server/SSH/managed-extension/installer **125/125**; syntax and diff checks clean.
 - Real Windows/Homelab smoke completed the full lifecycle: the leader Agent discovered sessions and created `Smoke Team` without user-copied handles; both members read sanitized membership; Homelab refreshed the leader handle from Team status and sent `TEAM-MEMBER-HANDLE-SMOKE` via `pet_send`; the leader received it, dissolved the Team, and both sessions subsequently reported no active Team.
 
-## 2026-09-13 — M3b-lite Minimal Shared Board automated slice complete
+## 2026-09-13 — M3b-lite Minimal Shared Board complete
 
 - Added a neutral `createTeamBoardStore()` with one strict, atomic `board-<teamId>.json` record per Team, synthetic revision 0, whole-document OCC, monotonic timestamps, last-writer identity and an 8192-byte UTF-8 Markdown cap.
 - Board reads require authoritative active Team membership and allow observers; writes reject observers and require exact `baseRevision`. Corrupt, oversized or mismatched persisted records fail closed.
 - Added exact coordinator routes `POST /pet-team/board/read|write`, reusing caller capability authentication, active-Team resolution and Secure Remote SSH nonce gating. Responses expose only revision, Markdown, update time and sanitized last-writer attribution.
 - Added default-off, current-session `/pet-board-write on|off|status`, read-only `pet_board_read()` and gated `pet_board_write(baseRevision, markdown)`. Session start/shutdown/reload reset write authorization.
 - Board content is explicitly teammate-authored data rather than authenticated user instruction. Writes do not send peer messages, wake sessions or mutate Team membership.
-- Automated verification passed: root **302/302**; focused Clawd Team/peer/server/SSH/managed-extension regression **162/162**. Cross-machine read/write/conflict remains the live smoke gate.
+- Automated verification passed: root **302/302**; focused Clawd Team/peer/server/SSH/managed-extension regression **162/162**.
+- Real Windows/Homelab smoke passed: the leader created revision 1 from the empty revision 0 Board; Homelab read revision 1, preserved the document and appended its finding at revision 2; attribution identified the Homelab member. A deliberate stale revision 0 write returned conflict with `currentRevision:2`, and a subsequent read proved the rejected marker was absent and revision 2 content remained intact.
 
 ## 2026-09-09 — Secure Remote Pi inbox and terminal receipt visibility
 

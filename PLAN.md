@@ -133,7 +133,7 @@ Lean peer wake decision gate 已通过真实 Windows → Homelab → Windows 两
 
 M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。Windows leader 与 Homelab member 已完成 Agent 自发现/create、双方 status、status fresh handle → `pet_send` 及 leader dissolve 的真实完整闭环。
 
-#### M3b-lite — Minimal Shared Board（当前）
+#### M3b-lite — Minimal Shared Board（完成）
 
 先验证共享状态本身是否有价值，而不是直接实现完整 kanban/patch 平台：
 
@@ -144,6 +144,8 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - Board 内容是 teammate-authored shared data，不冒充 user instruction；写入不会自动发消息或唤醒其他 session。
 - Team dissolve 后旧 Board 保留在 coordinator 但不再可访问；历史、GC、恢复和导出后置。
 - 当前 whole-document write 是刻意的 PoC 简化；不声称满足下方完整结构化 Board contract。
+
+真实 Windows leader 与 Homelab member 已完成 revision 0→1→2 跨机读写、最近作者 attribution、stale revision 0 冲突拒绝和拒绝后内容完整性复查。M3b-lite 真机 gate 通过；完整结构化 Board 继续 parked，直到真实使用暴露 whole-document 模型的具体痛点。
 
 #### Parked：完整 Team ACL 与 Structured Board
 
@@ -284,9 +286,9 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 3. Lean peer wake：session-local opt-in、复用 M2 `maxHops=1`、真实 Windows↔Homelab 两-turn E2E。（完成；decision gate 通过）
 4. M3a.2-lite autonomous Team：session-local autonomy opt-in、Agent discovery/create/status/dissolve、复用 `psh_` + `pet_send`。（完成）
 5. 真实 Windows/Homelab autonomous create/status/send/dissolve smoke。（完成）
-6. M3b-lite Board：Team-scoped revisioned Markdown、session-local write opt-in、read/write tools、OCC 与 attribution。（当前）
-7. 真实跨机 read/write/conflict smoke；根据体验决定停在 scratchpad 或解冻 structured patch/Board UI。
-8. 录制真实协作 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
+6. M3b-lite Board：Team-scoped revisioned Markdown、session-local write opt-in、read/write tools、OCC 与 attribution。（完成）
+7. 真实 Windows/Homelab read/write/conflict/content-integrity smoke。（完成；structured Board 继续 parked）
+8. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。（当前）
 9. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。
 10. 实现 OpenCode adapter。
 11. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
