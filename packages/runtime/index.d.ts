@@ -463,3 +463,80 @@ export declare const MAX_TEAM_NAME_LENGTH: 80;
 export declare const TEAM_MEMBERSHIP_POLICY: "user_only";
 export declare const VALID_TEAM_ROLES: readonly TeamRole[];
 export declare const VALID_TEAM_STATUSES: readonly TeamStatus[];
+
+export interface TeamBoardMemberActor {
+  kind: "member";
+  petId: string;
+}
+
+export type TeamBoardActor = TeamBoardMemberActor;
+
+export interface BoardRecord {
+  schemaVersion: "1";
+  teamId: string;
+  revision: number;
+  markdown: string;
+  updatedAtMs: number | null;
+  updatedByPetId: string | null;
+}
+
+export interface ReadBoardOptions {
+  teamId: string;
+  actor: TeamBoardActor;
+}
+
+export interface WriteBoardOptions {
+  teamId: string;
+  actor: TeamBoardActor;
+  baseRevision: number;
+  markdown: string;
+}
+
+export interface BoardReadSuccess {
+  ok: true;
+  board: BoardRecord;
+}
+
+export interface BoardReadError {
+  ok: false;
+  error: string;
+  reason?: string;
+  currentRevision?: number;
+}
+
+export type BoardReadResult = BoardReadSuccess | BoardReadError;
+
+export interface BoardWriteSuccess {
+  ok: true;
+  board: BoardRecord;
+}
+
+export interface BoardWriteError {
+  ok: false;
+  error: string;
+  reason?: string;
+  currentRevision?: number;
+}
+
+export type BoardWriteResult = BoardWriteSuccess | BoardWriteError;
+
+export interface TeamBoardStoreConfig {
+  teamStore?: TeamStore;
+  dataDir?: string;
+  env?: Record<string, string | undefined>;
+  fsApi?: unknown;
+  now?: () => number;
+}
+
+/**
+ * Optimistic Concurrency Control (OCC) and Actor Authentication note:
+ * Trusted adapter authenticates actor and OCC assumes canonical single-writer coordinator.
+ */
+export interface TeamBoardStore {
+  readBoard(options: ReadBoardOptions): BoardReadResult;
+  writeBoard(options: WriteBoardOptions): BoardWriteResult;
+}
+
+export declare function createTeamBoardStore(config?: TeamBoardStoreConfig): TeamBoardStore;
+
+export declare const MAX_BOARD_MARKDOWN_BYTES: 8192;

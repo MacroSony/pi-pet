@@ -2,9 +2,9 @@
 
 > Status: **parked productization contract**. The Lean active-message decision gate passed, but this hardened Team/ACL design remains conditional rather than a prerequisite for the current PoC.
 >
-> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. Team membership grants no new authority.
+> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team_create/status/dissolve`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in.
 >
-> Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, Shared Board, Team UI, or semantic movement.
+> Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
 
 ## 1. Product boundary
 
@@ -259,9 +259,9 @@ Budget exhaustion returns an explicit rejection with bounded `retryAfterMs`; it 
 
 ## 13. Explicitly deferred
 
-- Shared Board and Board UI (Milestone 3b);
+- structured Board patches/history and Board UI beyond the M3b-lite Markdown scratchpad;
 - custom RBAC or policy DSL;
-- Agent-created Teams, autonomous invitations, or leader election;
+- autonomous invitations, member editing, or leader election beyond M3a.2-lite Agent-created static Teams;
 - persistent wake opt-in;
 - unrestricted autonomous multi-round debate;
 - transcript/context synchronization;

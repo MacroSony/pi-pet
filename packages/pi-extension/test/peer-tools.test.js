@@ -16,6 +16,7 @@ const typeboxStub = {
     Array: (items, opts) => ({ type: "array", items, ...opts }),
     Union: (schemas) => ({ anyOf: schemas }),
     Literal: (value) => ({ const: value }),
+    Integer: (opts) => ({ type: "integer", ...opts }),
   },
 };
 
@@ -120,15 +121,17 @@ function registerTools(pi = {}) {
 
 // ── 1. Exact Tool Registration & Schema ──────────────────────────────────────
 
-test("registers all six tools: pet_express, pet_list_sessions, pet_send, pet_team_status, pet_team_create, and pet_team_dissolve", () => {
+test("registers all eight tools: pet_express, pet_list_sessions, pet_send, pet_team_status, pet_team_create, pet_team_dissolve, pet_board_read, and pet_board_write", () => {
   const tools = registerTools();
-  assert.equal(tools.size, 6);
+  assert.equal(tools.size, 8);
   assert.ok(tools.has("pet_express"));
   assert.ok(tools.has("pet_list_sessions"));
   assert.ok(tools.has("pet_send"));
   assert.ok(tools.has("pet_team_status"));
   assert.ok(tools.has("pet_team_create"));
   assert.ok(tools.has("pet_team_dissolve"));
+  assert.ok(tools.has("pet_board_read"));
+  assert.ok(tools.has("pet_board_write"));
 
   const listDef = tools.get("pet_list_sessions");
   assert.equal(listDef.name, "pet_list_sessions");
@@ -169,6 +172,25 @@ test("registers all six tools: pet_express, pet_list_sessions, pet_send, pet_tea
   const teamDissolveDef = tools.get("pet_team_dissolve");
   assert.equal(teamDissolveDef.name, "pet_team_dissolve");
   assert.equal(teamDissolveDef.parameters.type, "object");
+
+  const boardReadDef = tools.get("pet_board_read");
+  assert.equal(boardReadDef.name, "pet_board_read");
+  assert.equal(boardReadDef.label, "Read Pet Team Board");
+  assert.equal(typeof boardReadDef.description, "string");
+  assert.equal(typeof boardReadDef.promptSnippet, "string");
+  assert.ok(Array.isArray(boardReadDef.promptGuidelines));
+  assert.equal(boardReadDef.parameters.type, "object");
+
+  const boardWriteDef = tools.get("pet_board_write");
+  assert.equal(boardWriteDef.name, "pet_board_write");
+  assert.equal(boardWriteDef.label, "Write Pet Team Board");
+  assert.equal(typeof boardWriteDef.description, "string");
+  assert.equal(typeof boardWriteDef.promptSnippet, "string");
+  assert.ok(Array.isArray(boardWriteDef.promptGuidelines));
+  assert.equal(boardWriteDef.parameters.type, "object");
+  assert.equal(boardWriteDef.parameters.properties.baseRevision.type, "integer");
+  assert.equal(boardWriteDef.parameters.properties.markdown.type, "string");
+  assert.equal(boardWriteDef.parameters.properties.markdown.maxLength, 8192);
 });
 
 // ── 2. Local Config & Remote Preference ──────────────────────────────────────

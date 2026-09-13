@@ -30,14 +30,24 @@
 - Automated verification passed: root **251/251**; focused Clawd extension/capability/installer/remote-consumer **58/58**; remote wake coverage includes enabled hop 0 and hop 1.
 - Real Windows → Homelab → Windows testing then passed both automatic turns without user relay: Homelab woke from idle on hop 0, replied through the supplied single-use handle, and Windows woke on hop 1 with no remaining reply handle or fresh thread. The decision gate passed. A malformed smoke payload containing only a marker caused the Homelab model to investigate unnecessarily; this was attributed to sender test construction and prompt wording was intentionally left unchanged pending repeated evidence.
 
-## 2026-09-13 — M3a.2-lite autonomous Team automated slice complete
+## 2026-09-13 — M3a.2-lite autonomous Team complete
 
 - Added current-attach `/pet-team-autonomy on|off|status`, default off and reset on session start, shutdown and reload.
 - Added Agent-facing `pet_team_create(name, targets)`, `pet_team_status()` and leader-only `pet_team_dissolve()`. Mutations require standing user authorization; read-only status does not.
 - Reused existing caller/generation-bound `psh_` catalog handles for machine-to-machine member selection. Team creation consumes and resolves them without persistence; reply handles are purpose-rejected without being burned.
 - Wired exact `/pet-team/status`, `/pet-team/create` and `/pet-team/dissolve` routes through local Clawd and existing nonce-gated Secure Remote SSH ingress. Team membership adds no messaging/wake/session authority; teammates continue using `pet_send`.
 - Enforced one active Team per member for the lite slice, caller-as-leader, 1–7 targets, strict request keys/body caps, sanitized projections and no raw session/pet IDs, tokens, paths or transcripts.
-- Verification passed: root **256/256**; focused Clawd Team/peer/server/SSH/managed-extension/installer **125/125**; syntax and diff checks clean. Real autonomous local/SSH Team creation remains the next smoke gate.
+- Automated verification passed: root **256/256**; focused Clawd Team/peer/server/SSH/managed-extension/installer **125/125**; syntax and diff checks clean.
+- Real Windows/Homelab smoke completed the full lifecycle: the leader Agent discovered sessions and created `Smoke Team` without user-copied handles; both members read sanitized membership; Homelab refreshed the leader handle from Team status and sent `TEAM-MEMBER-HANDLE-SMOKE` via `pet_send`; the leader received it, dissolved the Team, and both sessions subsequently reported no active Team.
+
+## 2026-09-13 — M3b-lite Minimal Shared Board automated slice complete
+
+- Added a neutral `createTeamBoardStore()` with one strict, atomic `board-<teamId>.json` record per Team, synthetic revision 0, whole-document OCC, monotonic timestamps, last-writer identity and an 8192-byte UTF-8 Markdown cap.
+- Board reads require authoritative active Team membership and allow observers; writes reject observers and require exact `baseRevision`. Corrupt, oversized or mismatched persisted records fail closed.
+- Added exact coordinator routes `POST /pet-team/board/read|write`, reusing caller capability authentication, active-Team resolution and Secure Remote SSH nonce gating. Responses expose only revision, Markdown, update time and sanitized last-writer attribution.
+- Added default-off, current-session `/pet-board-write on|off|status`, read-only `pet_board_read()` and gated `pet_board_write(baseRevision, markdown)`. Session start/shutdown/reload reset write authorization.
+- Board content is explicitly teammate-authored data rather than authenticated user instruction. Writes do not send peer messages, wake sessions or mutate Team membership.
+- Automated verification passed: root **302/302**; focused Clawd Team/peer/server/SSH/managed-extension regression **162/162**. Cross-machine read/write/conflict remains the live smoke gate.
 
 ## 2026-09-09 — Secure Remote Pi inbox and terminal receipt visibility
 

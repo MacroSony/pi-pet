@@ -119,23 +119,35 @@ Tauri input
 
 ### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-Lean peer wake decision gate 已通过真实 Windows → Homelab → Windows 两次自动 turn：receiver opt-in、`triggerTurn:true`、single-use hop 0 reply handle、hop 1 无 reply budget和 user-first 主链均成立。当前继续 M3a.2-lite，不恢复旧版完整 Team ACL 平台。
+Lean peer wake decision gate 已通过真实 Windows → Homelab → Windows 两次自动 turn：receiver opt-in、`triggerTurn:true`、single-use hop 0 reply handle、hop 1 无 reply budget和 user-first 主链均成立。M3a.2-lite autonomous Team 也已完成跨机闭环；当前进入 M3b-lite Board，不恢复旧版完整 Team ACL 平台。
 
-#### M3a.2-lite — Agent 自主拉群（当前）
+#### M3a.2-lite — Agent 自主拉群（完成）
 
 - `/pet-team-autonomy on|off|status` 是当前 attach 的用户 standing authorization；默认 off，不持久化，session start/shutdown/reload 清零。
 - Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team_create(name, targets)`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
 - caller 自动成为 leader；targets 成为 member；每个 session 暂限一个 active Team。
 - `pet_team_status()` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
 - `pet_team_dissolve()` 仅 leader 且 autonomy enabled 时可用。
-- Lite Team 只是持久分组与发现信息，不授予新的 send/wake/Board/session 权限，因此暂不做 target invite/accept。
-- 不新增 `pth_`、`pet_team_send`、角色编辑、Team UI、wake budget、hard lease 或 Board。
+- Lite Team 本身只提供持久分组与发现信息，不自动授予 send/wake/session 权限，因此暂不做 target invite/accept。
+- 不新增 `pth_`、`pet_team_send`、角色编辑、Team UI、wake budget 或 hard lease。
 
-M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。完整产品化边界仍记录在 [TEAM-WAKE-CONTRACT.md](docs/TEAM-WAKE-CONTRACT.md)，但继续保持 parked，只有真实失败证明需要时才解冻。
+M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。Windows leader 与 Homelab member 已完成 Agent 自发现/create、双方 status、status fresh handle → `pet_send` 及 leader dissolve 的真实完整闭环。
 
-#### Parked：完整 Team ACL 与 Shared Board
+#### M3b-lite — Minimal Shared Board（当前）
 
-M3a.2-lite 真机可玩验证后，再决定是否实现 Board。Board v1 候选包含：
+先验证共享状态本身是否有价值，而不是直接实现完整 kanban/patch 平台：
+
+- 每个 active Team 只有一份 canonical Markdown scratchpad，最多 8192 UTF-8 bytes，存放在 Windows Clawd coordinator。
+- `pet_board_read()` 对成员只读开放；返回 revision、Markdown 和最近更新者的脱敏 attribution。
+- `/pet-board-write on|off|status` 是当前 session 的写入授权，默认 off，session start/shutdown/reload 清零。
+- `pet_board_write(baseRevision, markdown)` 做全文原子替换；必须先读并提交精确 revision，冲突返回 current revision，不做 silent last-write-wins。
+- Board 内容是 teammate-authored shared data，不冒充 user instruction；写入不会自动发消息或唤醒其他 session。
+- Team dissolve 后旧 Board 保留在 coordinator 但不再可访问；历史、GC、恢复和导出后置。
+- 当前 whole-document write 是刻意的 PoC 简化；不声称满足下方完整结构化 Board contract。
+
+#### Parked：完整 Team ACL 与 Structured Board
+
+M3b-lite 真机验证后，再决定是否实现结构化 Board。候选包含：
 
 ```text
 Goal
@@ -151,7 +163,7 @@ Artifacts (references only)
 - Team / Board schema 和 ACL 属于 Pi Pet；Clawd 只托管 coordinator 和跨机路由。
 - canonical Board 位于 coordinator，不依赖跨机共享文件系统，也不复制 repo 文件。
 - 用户可在独立 Board 窗口中直接查看和编辑；用户修改同样带 revision 和审计来源。
-- Agent 通过 `pet_board_read()` 和带 `baseRevision` 的受限 patch 操作修改；禁止全文覆盖共享 Markdown。
+- 完整版 Agent 通过 `pet_board_read()` 和带 `baseRevision` 的受限 patch 操作修改；禁止全文覆盖共享 Markdown。M3b-lite 暂以 bounded whole-document OCC 验证产品价值。
 - 所有条目记录作者、时间和 revision；冲突返回最新 revision，不能 last-write-wins 静默覆盖。
 - Board mutation 本身不自动唤醒全队；真正需要另一 Agent 处理时再通过 `pet_send` 通知。
 - 用户拥有最高权限。Leader 是 Team ACL 角色，不是 provider 或进程 owner。
@@ -270,12 +282,13 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 1. Milestone 1 own-session inbox。（完成；自动化与 Windows/SSH 真机通过）
 2. Milestone 2 catalog + bounded passive peer messaging。（完成；本地/远程/restart/disconnect/reconnect 真机通过）
 3. Lean peer wake：session-local opt-in、复用 M2 `maxHops=1`、真实 Windows↔Homelab 两-turn E2E。（完成；decision gate 通过）
-4. M3a.2-lite autonomous Team：session-local autonomy opt-in、Agent discovery/create/status/dissolve、复用 `psh_` + `pet_send`。（当前）
-5. 真实 local/SSH Agent 自主拉群 smoke；根据体验决定是否需要 invite/accept 或完整 Team ACL。
-6. 若 Team 仍有价值，再做 structured Board：revisioned patch、审计、并发冲突和独立 Board UI。
-7. 录制真实协作 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
-8. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。
-9. 实现 OpenCode adapter。
-10. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
-11. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
-12. 最后再考虑 Claude、Codex、复杂社交和自由白板。
+4. M3a.2-lite autonomous Team：session-local autonomy opt-in、Agent discovery/create/status/dissolve、复用 `psh_` + `pet_send`。（完成）
+5. 真实 Windows/Homelab autonomous create/status/send/dissolve smoke。（完成）
+6. M3b-lite Board：Team-scoped revisioned Markdown、session-local write opt-in、read/write tools、OCC 与 attribution。（当前）
+7. 真实跨机 read/write/conflict smoke；根据体验决定停在 scratchpad 或解冻 structured patch/Board UI。
+8. 录制真实协作 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
+9. 根据 M3 真机价值重新决定 Milestone 4 的语义动作；禁止 proximity 推断关系。
+10. 实现 OpenCode adapter。
+11. 探索 DSH 公开 plugin seam；不满足边界则维持部分 capability。
+12. 空闲时做中立 ChildActivity 小猫；`forge_subagent` 仅作为第一个可选映射源。
+13. 最后再考虑 Claude、Codex、复杂社交和自由白板。

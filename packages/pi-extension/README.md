@@ -175,7 +175,28 @@ pet_team_dissolve()
 
 `targets` are 1–7 existing `psh_` catalog handles returned by `pet_list_sessions`; they are machine-facing values passed verbatim by the Agent, not IDs for the user to type. Creation consumes the handles, resolves them to internal pet identities, and stores no `psh_` value. Team status returns names, roles, availability and fresh short-lived handles for active teammates; messaging continues through `pet_send`.
 
-Autonomy is session/attach-local, defaults off, and resets on session start, shutdown or extension reload. Team membership itself grants no new messaging, wake, Board or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
+Autonomy is session/attach-local, defaults off, and resets on session start, shutdown or extension reload. Team membership itself grants no new messaging, wake or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
+
+## Minimal Shared Board PoC
+
+Every active Team has one coordinator-hosted Markdown scratchpad. Reading is available to Team members:
+
+```text
+pet_board_read()
+```
+
+Agent writes require separate standing authorization for the current attach:
+
+```text
+/pet-board-write on
+/pet-board-write off
+/pet-board-write status
+pet_board_write(baseRevision, markdown)
+```
+
+The document is capped at 8192 UTF-8 bytes. A write atomically replaces the whole document only when `baseRevision` exactly matches the latest Board revision. On conflict, re-read and merge intentionally; there is no silent last-write-wins. Write authorization defaults off and resets on session start, shutdown or extension reload.
+
+Board output is teammate-authored shared data, not authenticated user instruction. The projection contains only revision, Markdown, update time and a sanitized last-writer attribution. Board writes do not send peer messages, enable wake, or modify Team membership. Whole-document replacement is an intentionally temporary PoC seam; structured patches, history, attachments, Board UI and GC remain deferred.
 
 ## Secure Remote SSH Inbox Consumption
 
