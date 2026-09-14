@@ -2,7 +2,7 @@
 
 > Status: **parked productization contract**. The Lean active-message decision gate passed, but this hardened Team/ACL design remains conditional rather than a prerequisite for the current PoC.
 >
-> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team(action="status|create|dissolve", ...)`, consuming existing `psh_` catalog handles for persistent descriptive grouping while continuing to use `pet_send`. M3b-lite adds `pet_board(action="read|write", ...)`, a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in. M3c.1 adds a presentation-only Team badge and independent read-only Board window over an ID-free projection. The current model-facing surface is fixed at five tools; coordinator routes remain separate internal wire endpoints.
+> Current PoC delta: `/pet-peer-wake on|off|status` enables receiver-local M2 wake with `maxHops=1`. M3a.2-lite adds `/pet-team-autonomy` plus `pet_team(action="status|create|add|remove|dissolve", ...)`, consuming existing `psh_` catalog handles for create/online add and issuing caller-scoped, revision-bound `pmh_` references for offline-safe leader removal while continuing to use `pet_send`. M3b-lite adds `pet_board(action="read|write", ...)`, a Team-scoped revisioned Markdown scratchpad with separate session-local write opt-in. M3c.1 adds a presentation-only Team badge and independent read-only Board window over an ID-free projection. The current model-facing surface is fixed at five tools; coordinator routes remain separate internal wire endpoints.
 >
 > Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/editing UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
 
@@ -52,9 +52,8 @@ Rules:
 - Team size is 1..8.
 - Roles are exactly `leader | member | observer`.
 - There is exactly one leader.
-- Membership policy is fixed to `user_only` in v1.
-- Only a trusted user control surface may create/dissolve a Team, add/remove members, or change roles.
-- Agent tools cannot mutate membership and cannot end, restart, or spawn a session.
+- Membership policy is fixed to `user_only` in v1. In the current lite adapter, `/pet-team-autonomy on` is an explicit attach-local user authorization under which the Agent may create/dissolve and a leader Agent may add/remove; this is not the future complete ACL design.
+- The current lite Agent surface cannot change roles, transfer leadership, end/restart/spawn a session, or persist its own authorization.
 - Removing a member never ends its session or pet.
 - A dissolved Team remains readable for audit but accepts no mutation or Team message.
 - Every mutation requires `baseRevision`; mismatch returns explicit conflict with the current revision.
@@ -64,7 +63,9 @@ The neutral runtime receives only trusted internal pet identities from the coord
 
 ## 3. Team projection and handles
 
-Agent-facing `pet_team(action="status")` returns only Teams containing the caller. Members are projected as:
+Agent-facing `pet_team(action="status")` returns only the active Team containing the caller. The current lite projection uses an ordinary fresh `psh_` only when a teammate is active and messageable. A leader additionally receives `memberRef: "pmh_<opaque>"` for each non-leader member, including offline members. The `pmh_` is a process-secret HMAC over caller, Team, exact revision, member and `joinedAtMs`: it contains no reversible identity, needs no persistent lookup table, remains usable while the target is offline, and fails after revision change, remove/re-add, dissolution or coordinator process restart. Non-leaders never receive member references, and no reference is issued for the leader.
+
+The future hardened Team-send projection described below remains parked:
 
 ```json
 {
@@ -94,7 +95,7 @@ Team revision invalidates handles for authorization changes. A harmless Team ren
 
 ### 4.1 `pet_team(action="status")`
 
-Reads the caller's active Team projection. It cannot enumerate unrelated Teams. In the current lite implementation, `create` and `dissolve` are additional actions on this same tool and require the separate `/pet-team-autonomy` user opt-in.
+Reads the caller's active Team projection. It cannot enumerate unrelated Teams. In the current lite implementation, `create`, `add`, `remove`, and `dissolve` are additional actions on this same tool and require the separate `/pet-team-autonomy` user opt-in. `add` is leader-only, consumes one caller-scoped catalog `psh_`, and rechecks that the target session remains active/eligible at use time. `remove` is leader-only and accepts only a current caller-scoped `pmh_`; it is intentionally offline-safe and cannot remove the leader.
 
 ### 4.2 `pet_team_send(target, text, wake?)`
 
@@ -233,6 +234,14 @@ Budget exhaustion returns an explicit rejection with bounded `retryAfterMs`; it 
 - disconnect/restart/revocation tests;
 - all messages remain passive.
 
+### Implemented lite membership delta
+
+- session-local, default-off `/pet-team-autonomy` authorization;
+- fixed `pet_team` actions for create/status/add/remove/dissolve;
+- online add through one-shot catalog `psh_` with active-session revalidation;
+- offline-safe leader remove through caller/Team/revision/member/`joinedAtMs`-bound `pmh_`;
+- no role editing, invitations, new messaging authority, session lifecycle authority, or persistent Agent opt-in.
+
 ### M3a.3 — Bounded wake
 
 - session-local `/pet-peer-wake` command;
@@ -243,7 +252,9 @@ Budget exhaustion returns an explicit rejection with bounded `retryAfterMs`; it 
 
 ## 12. Required acceptance scenarios
 
-1. Agent tools cannot create, dissolve, add, remove, or re-role Team members.
+The scenarios below describe the parked hardened design. Scenario 1 is superseded only by the explicitly bounded lite `/pet-team-autonomy` exception above.
+
+1. Without a current trusted user authorization, Agent tools cannot create, dissolve, add, remove, or re-role Team members.
 2. Observer cannot send; removed member loses Team visibility and old handles immediately.
 3. Team projections contain no raw IDs, internal pet IDs, paths, transcript, tokens, or routing data.
 4. Team revision, capability rotation, disconnect, and coordinator restart invalidate old handles.
@@ -261,7 +272,7 @@ Budget exhaustion returns an explicit rejection with bounded `retryAfterMs`; it 
 
 - structured Board patches/history and Board UI beyond the M3b-lite Markdown scratchpad;
 - custom RBAC or policy DSL;
-- autonomous invitations, member editing, or leader election beyond M3a.2-lite Agent-created static Teams;
+- autonomous invitations, role editing, leader transfer/election, or membership mutation beyond M3a.2-lite's leader-only online add and offline-safe remove;
 - persistent wake opt-in;
 - unrestricted autonomous multi-round debate;
 - transcript/context synchronization;

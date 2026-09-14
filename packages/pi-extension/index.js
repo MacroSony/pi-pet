@@ -44,6 +44,8 @@ const PEER_ALLOWED_PATHS = new Set([
   "/pet-peer/send",
   "/pet-team/status",
   "/pet-team/create",
+  "/pet-team/add",
+  "/pet-team/remove",
   "/pet-team/dissolve",
   "/pet-team/board/read",
   "/pet-team/board/write",
@@ -823,29 +825,34 @@ function projectSendForModel(details) {
   return out;
 }
 
-function projectTeamStatusForModel(details) {
+function projectActiveTeamForModel(details, invalidReason) {
   if (!details || typeof details !== "object" || Array.isArray(details)) {
-    return { status: "failed", reason: "Invalid team response" };
+    return { status: "failed", reason: invalidReason };
   }
   const out = {
     status: typeof details.status === "string" ? details.status : "failed",
   };
+  if (Number.isSafeInteger(details.currentRevision)) {
+    out.currentRevision = details.currentRevision;
+  }
   if (details.team && typeof details.team === "object") {
     const members = [];
     if (Array.isArray(details.team.members)) {
       for (const m of details.team.members) {
-        if (m && typeof m === "object") {
-          const memberOut = {
-            displayName: m.displayName,
-            host: m.host,
-            state: m.state,
-            role: m.role,
-          };
-          if (m.handle) {
-            memberOut.handle = m.handle;
-          }
-          members.push(memberOut);
+        if (!m || typeof m !== "object") continue;
+        const memberOut = {
+          displayName: m.displayName,
+          host: m.host,
+          state: m.state,
+          role: m.role,
+        };
+        if (typeof m.handle === "string" && /^psh_[A-Za-z0-9_-]{1,124}$/.test(m.handle)) {
+          memberOut.handle = m.handle;
         }
+        if (typeof m.memberRef === "string" && /^pmh_[A-Za-z0-9_-]{1,124}$/.test(m.memberRef)) {
+          memberOut.memberRef = m.memberRef;
+        }
+        members.push(memberOut);
       }
     }
     out.team = {
@@ -861,42 +868,20 @@ function projectTeamStatusForModel(details) {
   return out;
 }
 
+function projectTeamStatusForModel(details) {
+  return projectActiveTeamForModel(details, "Invalid team response");
+}
+
 function projectTeamCreateForModel(details) {
-  if (!details || typeof details !== "object" || Array.isArray(details)) {
-    return { status: "failed", reason: "Invalid team create response" };
-  }
-  const out = {
-    status: typeof details.status === "string" ? details.status : "failed",
-  };
-  if (details.team && typeof details.team === "object") {
-    const members = [];
-    if (Array.isArray(details.team.members)) {
-      for (const m of details.team.members) {
-        if (m && typeof m === "object") {
-          const memberOut = {
-            displayName: m.displayName,
-            host: m.host,
-            state: m.state,
-            role: m.role,
-          };
-          if (m.handle) {
-            memberOut.handle = m.handle;
-          }
-          members.push(memberOut);
-        }
-      }
-    }
-    out.team = {
-      name: details.team.name,
-      revision: details.team.revision,
-      callerRole: details.team.callerRole,
-      members,
-    };
-  }
-  if (details.reason) {
-    out.reason = details.reason;
-  }
-  return out;
+  return projectActiveTeamForModel(details, "Invalid team create response");
+}
+
+function projectTeamAddForModel(details) {
+  return projectActiveTeamForModel(details, "Invalid team add response");
+}
+
+function projectTeamRemoveForModel(details) {
+  return projectActiveTeamForModel(details, "Invalid team remove response");
 }
 
 function projectTeamDissolveForModel(details) {
@@ -972,6 +957,12 @@ function projectTeamForModel(details) {
   }
   if (details.kind === "team_create") {
     return projectTeamCreateForModel(details);
+  }
+  if (details.kind === "team_add") {
+    return projectTeamAddForModel(details);
+  }
+  if (details.kind === "team_remove") {
+    return projectTeamRemoveForModel(details);
   }
   if (details.kind === "team_dissolve" || details.status === "dissolved") {
     return projectTeamDissolveForModel(details);
@@ -1149,6 +1140,74 @@ function renderTeamCreateResult(result, options, TextCtor = FallbackText) {
   return createText(`Team "${name}" created (rev ${rev}, ${members.length} members)`, TextCtor);
 }
 
+function renderTeamAddCall(params, TextCtor = FallbackText) {
+  return createText("pet_team add", TextCtor);
+}
+
+function renderTeamAddResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "active");
+  const isError = Boolean(result && result.isError) || (status !== "active");
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to add member to team";
+    if (expanded) {
+      return createText(`Failed to add member to team\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to add member to team: ${reason}`, TextCtor);
+  }
+  const team = d && typeof d.team === "object" ? d.team : null;
+  const name = (team && team.name) || "Team";
+  const rev = (team && team.revision) || 1;
+  const members = Array.isArray(team && team.members) ? team.members : [];
+  if (expanded) {
+    const lines = [
+      `Team: "${name}" (Active, Revision ${rev})`,
+      `Role: ${(team && team.callerRole) || "leader"}`,
+      `Members (${members.length}):`,
+    ];
+    for (const m of members) {
+      lines.push(`  • ${m.displayName || "Pi"} @ ${m.host || "local"} — ${m.role || "member"} (${m.state || "active"})`);
+    }
+    return createText(lines.join("\n"), TextCtor);
+  }
+  return createText(`Added member to team "${name}" (rev ${rev}, ${members.length} members)`, TextCtor);
+}
+
+function renderTeamRemoveCall(params, TextCtor = FallbackText) {
+  return createText("pet_team remove", TextCtor);
+}
+
+function renderTeamRemoveResult(result, options, TextCtor = FallbackText) {
+  const expanded = Boolean(options && options.expanded);
+  const d = extractResultDetails(result);
+  const status = (d && d.status) || (result && result.isError ? "failed" : "active");
+  const isError = Boolean(result && result.isError) || (status !== "active");
+  if (isError) {
+    const reason = (d && d.reason) || "Failed to remove member from team";
+    if (expanded) {
+      return createText(`Failed to remove member from team\nReason: ${reason}`, TextCtor);
+    }
+    return createText(`Failed to remove member from team: ${reason}`, TextCtor);
+  }
+  const team = d && typeof d.team === "object" ? d.team : null;
+  const name = (team && team.name) || "Team";
+  const rev = (team && team.revision) || 1;
+  const members = Array.isArray(team && team.members) ? team.members : [];
+  if (expanded) {
+    const lines = [
+      `Team: "${name}" (Active, Revision ${rev})`,
+      `Role: ${(team && team.callerRole) || "leader"}`,
+      `Members (${members.length}):`,
+    ];
+    for (const m of members) {
+      lines.push(`  • ${m.displayName || "Pi"} @ ${m.host || "local"} — ${m.role || "member"} (${m.state || "active"})`);
+    }
+    return createText(lines.join("\n"), TextCtor);
+  }
+  return createText(`Removed member from team "${name}" (rev ${rev}, ${members.length} members)`, TextCtor);
+}
+
 function renderTeamStatusCall(params, TextCtor = FallbackText) {
   return createText("pet_team status", TextCtor);
 }
@@ -1300,16 +1359,19 @@ function renderTeamCall(params, TextCtor = FallbackText) {
   }
   const action = typeof params.action === "string" ? params.action : null;
   if (action === "create") {
-    const name = typeof params.name === "string" && params.name.trim() ? params.name.trim() : "unnamed";
-    const targets = Array.isArray(params.targets) ? params.targets : [];
-    const count = targets.length;
-    return createText(`pet_team create: "${name}" (${count} member${count === 1 ? "" : "s"})`, TextCtor);
+    return renderTeamCreateCall(params, TextCtor);
+  }
+  if (action === "add") {
+    return renderTeamAddCall(params, TextCtor);
+  }
+  if (action === "remove") {
+    return renderTeamRemoveCall(params, TextCtor);
   }
   if (action === "status") {
-    return createText("pet_team status", TextCtor);
+    return renderTeamStatusCall(params, TextCtor);
   }
   if (action === "dissolve") {
-    return createText("pet_team dissolve", TextCtor);
+    return renderTeamDissolveCall(params, TextCtor);
   }
   return createText("pet_team", TextCtor);
 }
@@ -1318,6 +1380,12 @@ function renderTeamResult(result, options, TextCtor = FallbackText) {
   const d = extractResultDetails(result);
   if (d && d.kind === "team_create") {
     return renderTeamCreateResult(result, options, TextCtor);
+  }
+  if (d && d.kind === "team_add") {
+    return renderTeamAddResult(result, options, TextCtor);
+  }
+  if (d && d.kind === "team_remove") {
+    return renderTeamRemoveResult(result, options, TextCtor);
   }
   if (d && (d.kind === "team_dissolve" || d.status === "dissolved")) {
     return renderTeamDissolveResult(result, options, TextCtor);
@@ -1467,6 +1535,9 @@ function sanitizeTeamMember(member) {
   if (typeof member.handle === "string" && /^psh_[A-Za-z0-9_-]{1,124}$/.test(member.handle)) {
     out.handle = member.handle;
   }
+  if (typeof member.memberRef === "string" && /^pmh_[A-Za-z0-9_-]{1,124}$/.test(member.memberRef)) {
+    out.memberRef = member.memberRef;
+  }
   return out;
 }
 
@@ -1510,6 +1581,9 @@ function sanitizeTeamDetails(data, defaultReason = null) {
     if (sanitizedTeam) {
       out.team = sanitizedTeam;
     }
+  }
+  if (Number.isSafeInteger(data.currentRevision) && data.currentRevision >= 0) {
+    out.currentRevision = data.currentRevision;
   }
 
   const safeReason = sanitizePublicText(data.reason, 1024);
@@ -2984,25 +3058,32 @@ function piPetExtension(pi, dependencies = {}) {
       name: "pet_team",
       label: "Pet Team",
       description:
-        "Inspect or manage autonomous team membership and coordination. Supports actions: status (inspect current team and teammates), create (form a new team with specified pet sessions), dissolve (dissolve the active team as leader).",
+        "Inspect or manage autonomous team membership and coordination. Supports actions: status (inspect current team and teammates), create (form a new team with specified pet sessions), add (add an active pet session to the team as leader), remove (remove a member from the team as leader), dissolve (dissolve the active team as leader).",
       promptSnippet:
-        "pet_team(action, name?, targets?) — inspect or manage autonomous team membership (action: status | create | dissolve)",
+        "pet_team(action, name?, targets?, target?, member?) — inspect or manage autonomous team membership (action: status | create | add | remove | dissolve)",
       promptGuidelines: [
-        "action is required: status | create | dissolve.",
-        "status: inspect active team membership, caller role, and fresh teammate messaging handles (psh_...). Ungated.",
+        "action is required: status | create | add | remove | dissolve.",
+        "status: inspect active team membership, caller role, and fresh teammate messaging handles (psh_...) and member references (pmh_...). Ungated.",
         "create: form a new team. Requires /pet-team-autonomy on, name (1-80 chars), and targets (1-7 psh_ handles). Caller becomes leader.",
+        "add: add an active pet session to the team. Requires /pet-team-autonomy on, leader role, and target (psh_ handle from pet_list_sessions). Online add requires the target session to be currently active.",
+        "remove: remove a teammate from the team. Requires /pet-team-autonomy on, leader role, and member (pmh_ handle from pet_team status). Leader-directed remove is offline-safe (works even if member is offline); leader cannot be removed.",
         "dissolve: dissolve the active team. Requires /pet-team-autonomy on and leader role.",
         "Teammate handles (psh_...) are refreshed in status response for direct messaging with pet_send.",
+        "Leader receives memberRef (pmh_...) for teammates in status/create/add/remove responses to use with remove.",
         "Each session may belong to at most one active team.",
       ],
       parameters: Type.Object({
         action: typeUnion([
           typeLiteral("status"),
           typeLiteral("create"),
+          typeLiteral("add"),
+          typeLiteral("remove"),
           typeLiteral("dissolve"),
         ]),
         name: Type.Optional(Type.String({ minLength: 1, maxLength: 80 })),
         targets: Type.Optional(typeArray(Type.String({ minLength: 1, maxLength: 128 }), { minItems: 1, maxItems: 7 })),
+        target: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
+        member: Type.Optional(Type.String({ minLength: 1, maxLength: 128 })),
       }),
       renderCall(params) {
         return renderTeamCall(params, TextCtor);
@@ -3016,16 +3097,16 @@ function piPetExtension(pi, dependencies = {}) {
         }
 
         for (const key of Object.keys(params)) {
-          if (key !== "action" && key !== "name" && key !== "targets") {
+          if (key !== "action" && key !== "name" && key !== "targets" && key !== "target" && key !== "member") {
             return formatPeerResult({ status: "rejected", reason: `Unexpected parameter: "${key}"` }, true, projectTeamForModel);
           }
         }
 
-        const { action, name, targets } = params;
-        if (typeof action !== "string" || (action !== "status" && action !== "create" && action !== "dissolve")) {
+        const { action, name, targets, target, member } = params;
+        if (typeof action !== "string" || (action !== "status" && action !== "create" && action !== "add" && action !== "remove" && action !== "dissolve")) {
           return formatPeerResult({
             status: "rejected",
-            reason: "action must be one of: status, create, dissolve",
+            reason: "action must be one of: status, create, add, remove, dissolve",
           }, true, projectTeamForModel);
         }
 
@@ -3040,6 +3121,12 @@ function piPetExtension(pi, dependencies = {}) {
           }
           if (targets !== undefined) {
             return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "status": targets' }, true, projectTeamForModel);
+          }
+          if (target !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "status": target' }, true, projectTeamForModel);
+          }
+          if (member !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "status": member' }, true, projectTeamForModel);
           }
 
           const capabilityToken = readPeerCapabilityToken();
@@ -3070,6 +3157,13 @@ function piPetExtension(pi, dependencies = {}) {
         }
 
         if (action === "create") {
+          if (target !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "create": target' }, true, projectTeamForModel);
+          }
+          if (member !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "create": member' }, true, projectTeamForModel);
+          }
+
           if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
             return formatPeerResult({
               status: "rejected",
@@ -3129,12 +3223,116 @@ function piPetExtension(pi, dependencies = {}) {
           return formatPeerResult(sanitized, isError, projectTeamForModel);
         }
 
+        if (action === "add") {
+          if (name !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "add": name' }, true, projectTeamForModel);
+          }
+          if (targets !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "add": targets' }, true, projectTeamForModel);
+          }
+          if (member !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "add": member' }, true, projectTeamForModel);
+          }
+
+          if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
+            return formatPeerResult({
+              status: "rejected",
+              reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
+            }, true, projectTeamForModel);
+          }
+
+          if (typeof target !== "string" || !/^psh_[A-Za-z0-9_-]{1,124}$/.test(target)) {
+            return formatPeerResult({ status: "rejected", reason: "Invalid target: expected a psh_ opaque handle" }, true, projectTeamForModel);
+          }
+
+          const capabilityToken = readPeerCapabilityToken();
+          if (!capabilityToken) {
+            return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectTeamForModel);
+          }
+
+          const config = resolvePeerTransportConfig();
+          if (!config) {
+            return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectTeamForModel);
+          }
+
+          const body = {
+            schemaVersion: "1",
+            kind: "team_add",
+            rawSessionId,
+            capabilityToken,
+            target,
+          };
+
+          const res = await postPeerJson(config, "/pet-team/add", body, signal);
+          const isSuccessHttp = res.status === 200 || res.status === 201;
+          const sanitized = sanitizeTeamDetails(res.data, res.ok ? null : (res.reason || `HTTP ${res.status}`));
+          const isSuccessStatus = sanitized.status === "active";
+          const isError = !(isSuccessHttp && isSuccessStatus);
+
+          return formatPeerResult(sanitized, isError, projectTeamForModel);
+        }
+
+        if (action === "remove") {
+          if (name !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "remove": name' }, true, projectTeamForModel);
+          }
+          if (targets !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "remove": targets' }, true, projectTeamForModel);
+          }
+          if (target !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "remove": target' }, true, projectTeamForModel);
+          }
+
+          if (!teamAutonomyState.isEnabledFor(rawSessionId)) {
+            return formatPeerResult({
+              status: "rejected",
+              reason: "Team autonomy is disabled for this session. Enable it with /pet-team-autonomy on",
+            }, true, projectTeamForModel);
+          }
+
+          if (typeof member !== "string" || !/^pmh_[A-Za-z0-9_-]{1,124}$/.test(member)) {
+            return formatPeerResult({ status: "rejected", reason: "Invalid member: expected a pmh_ opaque handle" }, true, projectTeamForModel);
+          }
+
+          const capabilityToken = readPeerCapabilityToken();
+          if (!capabilityToken) {
+            return formatPeerResult({ status: "rejected", reason: "Peer capability token unavailable or invalid" }, true, projectTeamForModel);
+          }
+
+          const config = resolvePeerTransportConfig();
+          if (!config) {
+            return formatPeerResult({ status: "failed", reason: "Clawd runtime configuration unavailable" }, true, projectTeamForModel);
+          }
+
+          const body = {
+            schemaVersion: "1",
+            kind: "team_remove",
+            rawSessionId,
+            capabilityToken,
+            member,
+          };
+
+          const res = await postPeerJson(config, "/pet-team/remove", body, signal);
+          const isSuccessHttp = res.status === 200;
+          const sanitized = sanitizeTeamDetails(res.data, res.ok ? null : (res.reason || `HTTP ${res.status}`));
+          const isSuccessStatus = sanitized.status === "active";
+          const isError = !(isSuccessHttp && isSuccessStatus);
+
+          return formatPeerResult(sanitized, isError, projectTeamForModel);
+        }
+
         if (action === "dissolve") {
           if (name !== undefined) {
             return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "dissolve": name' }, true, projectTeamForModel);
           }
           if (targets !== undefined) {
             return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "dissolve": targets' }, true, projectTeamForModel);
+          }
+          if (target !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "dissolve": target' }, true, projectTeamForModel);
+          }
+          if (member !== undefined) {
+            return formatPeerResult({ status: "rejected", reason: 'Unexpected parameter for action "dissolve": member' }, true, projectTeamForModel);
           }
 
           if (!teamAutonomyState.isEnabledFor(rawSessionId)) {

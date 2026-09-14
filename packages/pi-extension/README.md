@@ -205,10 +205,14 @@ With autonomy enabled, the Agent may discover active sessions and form one Team:
 pet_list_sessions()
 pet_team(action="create", name="Release Team", targets=[...])
 pet_team(action="status")
+pet_team(action="add", target="psh_...")
+pet_team(action="remove", member="pmh_...")
 pet_team(action="dissolve")
 ```
 
 `targets` are 1–7 existing `psh_` catalog handles returned by `pet_list_sessions`; they are machine-facing values passed verbatim by the Agent, not IDs for the user to type. Creation consumes the handles, resolves them to internal pet identities, and stores no `psh_` value. Team status returns names, roles, availability and fresh short-lived handles for active teammates; messaging continues through `pet_send`.
+
+Only the leader can use `add` or `remove`, and both remain gated by `/pet-team-autonomy`. `add` consumes one current catalog `psh_` and rechecks that the target session is still active and eligible. Leader status/create/add/remove projections include a `pmh_` only for non-leader members. This removal reference is HMAC-bound to the caller, Team, exact revision, member and `joinedAtMs`; it therefore works while the target is offline but becomes invalid after any Team mutation, remove/re-add, dissolution or coordinator process restart. A member cannot use another caller's reference, and the leader cannot be removed. Neither action ends or starts any session.
 
 Autonomy is session/attach-local, defaults off, and resets on session start, shutdown or extension reload. Team membership itself grants no new messaging, wake or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
 

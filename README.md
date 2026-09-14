@@ -20,7 +20,7 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - Tool/activity display, independent windows, animation transitions and local reactions.
 - Pi `pet_express(text?, emotion?)` with validated event/receipt delivery and renderer bubbles, both locally and through the existing Clawd Remote SSH path.
 - Local and Secure Remote SSH desktop-to-agent input (Pi own-session inbox v1): send text from the pet UI through local Clawd enqueue, then consume it in the bound Pi session via a local mailbox or capability-scoped remote claim/settle and `pi.sendUserMessage`.
-- Bounded peer messaging, receiver-local opt-in wake, autonomous lite Teams, and a Team-scoped revisioned Markdown Board with OCC.
+- Bounded peer messaging, receiver-local opt-in wake, autonomous lite Teams with leader-only online add and offline-safe remove, and a Team-scoped revisioned Markdown Board with OCC.
 - Distinct native Pi `/name` presentation, deterministic same-host collision suffixes, and low-noise custom renderers for the fixed five-tool Pi Pet surface: `pet_express`, `pet_list_sessions`, `pet_send`, `pet_team`, and `pet_board`.
 - Presentation-only Team badges and an independent read-only Team Board window showing sanitized member presence, revision, attribution, and Markdown as plain text. Team create/dissolve and Board writes refresh it without granting new authority.
 - Bounded Pet Chat for Pi: double-click a pet to open a separate chat window, send through the existing own-session inbox, and display only pet-originated user turns. Replies prefer the last successfully delivered `pet_express.text` (what the pet actually said) and fall back to reliably correlated final assistant text; terminal/peer input, generic tool traffic, internal IDs and transcripts are excluded.
@@ -28,7 +28,7 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.
 
-**Not implemented yet:** Team gathering/disperse movement, richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. Team badge/Board has passed automated and Windows GUI smoke; Pet Chat has passed automated, optimized-build and loader verification but still needs Windows ↔ Homelab GUI smoke. See [the Pet Chat contract](docs/PET-CHAT-CONTRACT.md), [implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
+**Not implemented yet:** Team gathering/disperse movement, richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. Team badge/Board and Pet Chat have passed automated and Windows ↔ Homelab GUI smoke; dynamic Team add/remove has automated coverage and awaits its final cross-machine smoke. See [the Pet Chat contract](docs/PET-CHAT-CONTRACT.md), [implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
 
 ## Source checkout
 

@@ -244,9 +244,9 @@ test("autonomy state resets on session start and disables on session shutdown", 
   assert.ok(notificationsAfter[0].text.includes("off"));
 });
 
-// ── 2. Gating for pet_team (create and dissolve actions) ───────────────────────
+// ── 2. Gating for pet_team (create, add, remove, dissolve actions) ───────────
 
-test("pet_team create and dissolve actions are rejected when autonomy is off; status action is not gated", async () => {
+test("pet_team create, add, remove, and dissolve actions are rejected when autonomy is off; status action is not gated", async () => {
   const { tools } = registerComponents();
   const teamTool = tools.get("pet_team");
   assert.ok(teamTool);
@@ -266,6 +266,30 @@ test("pet_team create and dissolve actions are rejected when autonomy is off; st
   const createBody = JSON.parse(createRes.content[0].text);
   assert.equal(createBody.status, "rejected");
   assert.ok(createBody.reason.includes("/pet-team-autonomy on"));
+
+  const addRes = await teamTool.execute(
+    "call-add-gate",
+    { action: "add", target: "psh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(addRes.isError, true);
+  const addBody = JSON.parse(addRes.content[0].text);
+  assert.equal(addBody.status, "rejected");
+  assert.ok(addBody.reason.includes("/pet-team-autonomy on"));
+
+  const removeRes = await teamTool.execute(
+    "call-rem-gate",
+    { action: "remove", member: "pmh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(removeRes.isError, true);
+  const removeBody = JSON.parse(removeRes.content[0].text);
+  assert.equal(removeBody.status, "rejected");
+  assert.ok(removeBody.reason.includes("/pet-team-autonomy on"));
 
   const dissolveRes = await teamTool.execute(
     "call-2",
@@ -325,15 +349,15 @@ test("pet_team parameter and strict conditional validation", async () => {
   for (const badAction of [undefined, null, 123, true, "", "unknown", "invalid", "READ", "STATUS"]) {
     const res = await teamTool.execute("tc-tv-act", { action: badAction }, undefined, undefined, ctx);
     assert.equal(res.isError, true);
-    assert.ok(JSON.parse(res.content[0].text).reason.includes("action must be one of: status, create, dissolve"));
+    assert.ok(JSON.parse(res.content[0].text).reason.includes("action must be one of: status, create, add, remove, dissolve"));
   }
 
   // Missing action key in object
   const missingActionRes = await teamTool.execute("tc-tv-noact", {}, undefined, undefined, ctx);
   assert.equal(missingActionRes.isError, true);
-  assert.ok(JSON.parse(missingActionRes.content[0].text).reason.includes("action must be one of: status, create, dissolve"));
+  assert.ok(JSON.parse(missingActionRes.content[0].text).reason.includes("action must be one of: status, create, add, remove, dissolve"));
 
-  // 4. action: "status" rejects name and targets
+  // 4. action: "status" rejects name, targets, target, member
   const statusNameRes = await teamTool.execute(
     "tc-tv-stat-name",
     { action: "status", name: "Team Alpha" },
@@ -354,7 +378,27 @@ test("pet_team parameter and strict conditional validation", async () => {
   assert.equal(statusTargetsRes.isError, true);
   assert.equal(JSON.parse(statusTargetsRes.content[0].text).reason, 'Unexpected parameter for action "status": targets');
 
-  // 5. action: "dissolve" rejects name and targets
+  const statusTargetRes = await teamTool.execute(
+    "tc-tv-stat-single-tgt",
+    { action: "status", target: "psh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(statusTargetRes.isError, true);
+  assert.equal(JSON.parse(statusTargetRes.content[0].text).reason, 'Unexpected parameter for action "status": target');
+
+  const statusMemberRes = await teamTool.execute(
+    "tc-tv-stat-mem",
+    { action: "status", member: "pmh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(statusMemberRes.isError, true);
+  assert.equal(JSON.parse(statusMemberRes.content[0].text).reason, 'Unexpected parameter for action "status": member');
+
+  // 5. action: "dissolve" rejects name, targets, target, member
   const dissolveNameRes = await teamTool.execute(
     "tc-tv-dis-name",
     { action: "dissolve", name: "Team Alpha" },
@@ -375,8 +419,49 @@ test("pet_team parameter and strict conditional validation", async () => {
   assert.equal(dissolveTargetsRes.isError, true);
   assert.equal(JSON.parse(dissolveTargetsRes.content[0].text).reason, 'Unexpected parameter for action "dissolve": targets');
 
+  const dissolveTargetRes = await teamTool.execute(
+    "tc-tv-dis-single-tgt",
+    { action: "dissolve", target: "psh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(dissolveTargetRes.isError, true);
+  assert.equal(JSON.parse(dissolveTargetRes.content[0].text).reason, 'Unexpected parameter for action "dissolve": target');
+
+  const dissolveMemberRes = await teamTool.execute(
+    "tc-tv-dis-mem",
+    { action: "dissolve", member: "pmh_member1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(dissolveMemberRes.isError, true);
+  assert.equal(JSON.parse(dissolveMemberRes.content[0].text).reason, 'Unexpected parameter for action "dissolve": member');
+
   // 6. action: "create" requires exactly name + targets (when autonomy is on)
   await autonomyCmd.handler("on", ctx);
+
+  // Rejects target or member on create
+  const createTargetRes = await teamTool.execute(
+    "tc-tv-cr-single-tgt",
+    { action: "create", name: "Team Alpha", targets: ["psh_m1"], target: "psh_m2" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(createTargetRes.isError, true);
+  assert.equal(JSON.parse(createTargetRes.content[0].text).reason, 'Unexpected parameter for action "create": target');
+
+  const createMemberRes = await teamTool.execute(
+    "tc-tv-cr-mem",
+    { action: "create", name: "Team Alpha", targets: ["psh_m1"], member: "pmh_m1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(createMemberRes.isError, true);
+  assert.equal(JSON.parse(createMemberRes.content[0].text).reason, 'Unexpected parameter for action "create": member');
 
   // Missing / invalid name
   for (const badName of [undefined, null, 123, true, {}, []]) {
@@ -477,11 +562,123 @@ test("pet_team parameter and strict conditional validation", async () => {
   );
   assert.equal(dupTargetsRes.isError, true);
   assert.equal(JSON.parse(dupTargetsRes.content[0].text).reason, "Duplicate target handles in targets array");
+
+  // 7. action: "add" requires exactly target:<psh_> (when autonomy is on)
+  // Rejects name, targets, member on add
+  const addNameRes = await teamTool.execute(
+    "tc-tv-add-name",
+    { action: "add", target: "psh_target_1", name: "Team Beta" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(addNameRes.isError, true);
+  assert.equal(JSON.parse(addNameRes.content[0].text).reason, 'Unexpected parameter for action "add": name');
+
+  const addTargetsRes = await teamTool.execute(
+    "tc-tv-add-tgts",
+    { action: "add", target: "psh_target_1", targets: ["psh_target_2"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(addTargetsRes.isError, true);
+  assert.equal(JSON.parse(addTargetsRes.content[0].text).reason, 'Unexpected parameter for action "add": targets');
+
+  const addMemberRes = await teamTool.execute(
+    "tc-tv-add-mem",
+    { action: "add", target: "psh_target_1", member: "pmh_member_1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(addMemberRes.isError, true);
+  assert.equal(JSON.parse(addMemberRes.content[0].text).reason, 'Unexpected parameter for action "add": member');
+
+  // Missing / invalid target on add
+  for (const badTarget of [undefined, null, 123, true, {}, [], "", "not_psh", "psh_", "psh_invalid space", "psh_" + "a".repeat(125)]) {
+    const res = await teamTool.execute(
+      "tc-tv-add-badtgt",
+      { action: "add", target: badTarget },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "Invalid target: expected a psh_ opaque handle");
+  }
+
+  // Missing target parameter entirely
+  const noAddTargetRes = await teamTool.execute(
+    "tc-tv-add-notgt",
+    { action: "add" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(noAddTargetRes.isError, true);
+  assert.equal(JSON.parse(noAddTargetRes.content[0].text).reason, "Invalid target: expected a psh_ opaque handle");
+
+  // 8. action: "remove" requires exactly member:<pmh_> (when autonomy is on)
+  // Rejects name, targets, target on remove
+  const remNameRes = await teamTool.execute(
+    "tc-tv-rem-name",
+    { action: "remove", member: "pmh_member_1", name: "Team Beta" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(remNameRes.isError, true);
+  assert.equal(JSON.parse(remNameRes.content[0].text).reason, 'Unexpected parameter for action "remove": name');
+
+  const remTargetsRes = await teamTool.execute(
+    "tc-tv-rem-tgts",
+    { action: "remove", member: "pmh_member_1", targets: ["psh_target_1"] },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(remTargetsRes.isError, true);
+  assert.equal(JSON.parse(remTargetsRes.content[0].text).reason, 'Unexpected parameter for action "remove": targets');
+
+  const remTargetRes = await teamTool.execute(
+    "tc-tv-rem-tgt",
+    { action: "remove", member: "pmh_member_1", target: "psh_target_1" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(remTargetRes.isError, true);
+  assert.equal(JSON.parse(remTargetRes.content[0].text).reason, 'Unexpected parameter for action "remove": target');
+
+  // Missing / invalid member on remove
+  for (const badMember of [undefined, null, 123, true, {}, [], "", "not_pmh", "pmh_", "psh_member_1", "pmh_invalid space", "pmh_" + "a".repeat(125)]) {
+    const res = await teamTool.execute(
+      "tc-tv-rem-badmem",
+      { action: "remove", member: badMember },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(res.isError, true);
+    assert.equal(JSON.parse(res.content[0].text).reason, "Invalid member: expected a pmh_ opaque handle");
+  }
+
+  // Missing member parameter entirely
+  const noRemMemberRes = await teamTool.execute(
+    "tc-tv-rem-nomem",
+    { action: "remove" },
+    undefined,
+    undefined,
+    ctx
+  );
+  assert.equal(noRemMemberRes.isError, true);
+  assert.equal(JSON.parse(noRemMemberRes.content[0].text).reason, "Invalid member: expected a pmh_ opaque handle");
 });
 
 // ── 4. Exact Wire Bodies, Pass-Through & Sanitized Responses ──────────────────
 
-test("exact status, create, dissolve wire requests, psh pass-through, and sanitized responses", async () => {
+test("exact status, create, add, remove, dissolve wire requests, psh/pmh pass-through, and sanitized responses", async () => {
   const requests = [];
   const server = await startRemoteTestServer((req, res) => {
     const chunks = [];
@@ -529,6 +726,7 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
                   role: "member",
                   canMessage: true,
                   handle: "psh_fresh_worker_handle_123",
+                  memberRef: "pmh_fresh_worker_member_ref_123",
                   petId: "pet_internal_target_petid",
                   rawSessionId: "pi:secret_raw_worker",
                 },
@@ -562,6 +760,72 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
                   role: "member",
                   canMessage: true,
                   handle: "psh_new_target_handle_456",
+                  memberRef: "pmh_new_target_member_ref_456",
+                },
+              ],
+            },
+          })
+        );
+      } else if (req.url === "/pet-team/add") {
+        res.end(
+          JSON.stringify({
+            schemaVersion: "1",
+            kind: "team_add",
+            status: "active",
+            teamId: "team_internal_added_id",
+            team: {
+              name: "Alpha Squad",
+              revision: 2,
+              callerRole: "leader",
+              members: [
+                {
+                  displayName: "Leader Pi",
+                  host: "local",
+                  state: "running",
+                  role: "leader",
+                  canMessage: false,
+                },
+                {
+                  displayName: "Worker Pi",
+                  host: "homelab",
+                  state: "idle",
+                  role: "member",
+                  canMessage: true,
+                  handle: "psh_fresh_worker_handle_123",
+                  memberRef: "pmh_fresh_worker_member_ref_123",
+                },
+                {
+                  displayName: "New Member Pi",
+                  host: "local",
+                  state: "running",
+                  role: "member",
+                  canMessage: true,
+                  handle: "psh_new_member_handle_789",
+                  memberRef: "pmh_new_member_ref_789",
+                  petId: "pet_internal_new_petid",
+                },
+              ],
+            },
+          })
+        );
+      } else if (req.url === "/pet-team/remove") {
+        res.end(
+          JSON.stringify({
+            schemaVersion: "1",
+            kind: "team_remove",
+            status: "active",
+            teamId: "team_internal_removed_id",
+            team: {
+              name: "Alpha Squad",
+              revision: 3,
+              callerRole: "leader",
+              members: [
+                {
+                  displayName: "Leader Pi",
+                  host: "local",
+                  state: "running",
+                  role: "leader",
+                  canMessage: false,
                 },
               ],
             },
@@ -681,7 +945,72 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
     assert.equal(createParsed.status, "active");
     assert.equal(createParsed.team.name, "Bravo Squad");
 
-    // ── 3. pet_team (action: "dissolve") ──
+    // ── 3. pet_team (action: "add" with exact psh target pass-through) ──
+    const addResult = await teamTool.execute(
+      "tc-add-1",
+      { action: "add", target: "psh_new_member_handle_789" },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(addResult.isError, false);
+    assert.equal(requests.length, 3);
+    const reqAdd = requests[2];
+    assert.equal(reqAdd.path, "/pet-team/add");
+    assert.equal(reqAdd.method, "POST");
+    assert.equal(reqAdd.headers["x-clawd-routing-nonce"], ROUTING_NONCE);
+    assert.deepEqual(reqAdd.body, {
+      schemaVersion: "1",
+      kind: "team_add",
+      rawSessionId,
+      capabilityToken: VALID_TOKEN,
+      target: "psh_new_member_handle_789",
+    });
+
+    const addJson = addResult.content[0].text;
+    assert.equal(addJson.includes("team_internal_added_id"), false);
+    assert.equal(addJson.includes("pet_internal_new_petid"), false);
+    assert.equal(addJson.includes(VALID_TOKEN), false);
+    const addParsed = JSON.parse(addJson);
+    assert.equal(addParsed.status, "active");
+    assert.equal(addParsed.team.name, "Alpha Squad");
+    assert.equal(addParsed.team.revision, 2);
+    assert.equal(addParsed.team.members.length, 3);
+    assert.equal(addParsed.team.members[2].handle, "psh_new_member_handle_789");
+    assert.equal(addParsed.team.members[2].memberRef, "pmh_new_member_ref_789");
+
+    // ── 4. pet_team (action: "remove" with exact pmh member pass-through) ──
+    const removeResult = await teamTool.execute(
+      "tc-rem-1",
+      { action: "remove", member: "pmh_new_member_ref_789" },
+      undefined,
+      undefined,
+      ctx
+    );
+    assert.equal(removeResult.isError, false);
+    assert.equal(requests.length, 4);
+    const reqRemove = requests[3];
+    assert.equal(reqRemove.path, "/pet-team/remove");
+    assert.equal(reqRemove.method, "POST");
+    assert.equal(reqRemove.headers["x-clawd-routing-nonce"], ROUTING_NONCE);
+    assert.deepEqual(reqRemove.body, {
+      schemaVersion: "1",
+      kind: "team_remove",
+      rawSessionId,
+      capabilityToken: VALID_TOKEN,
+      member: "pmh_new_member_ref_789",
+    });
+
+    const removeJson = removeResult.content[0].text;
+    assert.equal(removeJson.includes("team_internal_removed_id"), false);
+    assert.equal(removeJson.includes(VALID_TOKEN), false);
+    const removeParsed = JSON.parse(removeJson);
+    assert.equal(removeParsed.status, "active");
+    assert.equal(removeParsed.team.name, "Alpha Squad");
+    assert.equal(removeParsed.team.revision, 3);
+    assert.equal(removeParsed.team.members.length, 1);
+
+    // ── 5. pet_team (action: "dissolve") ──
     const dissolveResult = await teamTool.execute(
       "tc-dissolve-1",
       { action: "dissolve" },
@@ -690,8 +1019,8 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
       ctx
     );
     assert.equal(dissolveResult.isError, false);
-    assert.equal(requests.length, 3);
-    const reqDissolve = requests[2];
+    assert.equal(requests.length, 5);
+    const reqDissolve = requests[4];
     assert.equal(reqDissolve.path, "/pet-team/dissolve");
     assert.equal(reqDissolve.method, "POST");
     assert.equal(reqDissolve.headers["x-clawd-routing-nonce"], ROUTING_NONCE);
@@ -715,6 +1044,98 @@ test("exact status, create, dissolve wire requests, psh pass-through, and saniti
   }
 });
 
+test("pet_team add and remove OCC conflict handling and server error formatting", async () => {
+  const server = await startRemoteTestServer((req, res) => {
+    if (req.url === "/pet-team/add") {
+      res.writeHead(409, {
+        "Content-Type": "application/json",
+        "x-clawd-server": "clawd-on-desk",
+      });
+      res.end(
+        JSON.stringify({
+          schemaVersion: "1",
+          kind: "team_add",
+          status: "conflict",
+          reason: "Revision mismatch",
+          currentRevision: 5,
+        })
+      );
+    } else if (req.url === "/pet-team/remove") {
+      res.writeHead(409, {
+        "Content-Type": "application/json",
+        "x-clawd-server": "clawd-on-desk",
+      });
+      res.end(
+        JSON.stringify({
+          schemaVersion: "1",
+          kind: "team_remove",
+          status: "conflict",
+          reason: "Revision mismatch",
+          currentRevision: 6,
+        })
+      );
+    } else {
+      res.writeHead(500, {
+        "Content-Type": "application/json",
+        "x-clawd-server": "clawd-on-desk",
+      });
+      res.end(
+        JSON.stringify({
+          schemaVersion: "1",
+          status: "failed",
+          reason: "Internal coordinator error",
+        })
+      );
+    }
+  });
+
+  const tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "pi-pet-team-conflict-"));
+  const remoteConfigPath = path.join(tmpDir, "clawd-remote.json");
+  fs.writeFileSync(
+    remoteConfigPath,
+    JSON.stringify({
+      schemaVersion: 1,
+      remotePort: server.port,
+      routingNonce: ROUTING_NONCE,
+      profileId: "remote-homelab",
+    })
+  );
+
+  setPeerCapabilitySlot(VALID_TOKEN);
+  process.env.PI_PET_CLAWD_RUNTIME_CONFIG = path.join(tmpDir, "nonexistent-runtime.json");
+  process.env.PI_PET_CLAWD_REMOTE_CONFIG = remoteConfigPath;
+
+  try {
+    const { tools, commands } = registerComponents();
+    const autonomyCmd = commands.get("pet-team-autonomy");
+    const teamTool = tools.get("pet_team");
+
+    const ctx = makeCtx("pi:test-session-leader");
+    await autonomyCmd.handler("on", ctx);
+
+    // 1. Add conflict
+    const addRes = await teamTool.execute("tc-add-conf", { action: "add", target: "psh_target_123" }, undefined, undefined, ctx);
+    assert.equal(addRes.isError, true);
+    const addBody = JSON.parse(addRes.content[0].text);
+    assert.equal(addBody.status, "conflict");
+    assert.equal(addBody.reason, "Revision mismatch");
+    assert.equal(addBody.currentRevision, 5);
+
+    // 2. Remove conflict
+    const remRes = await teamTool.execute("tc-rem-conf", { action: "remove", member: "pmh_member_456" }, undefined, undefined, ctx);
+    assert.equal(remRes.isError, true);
+    const remBody = JSON.parse(remRes.content[0].text);
+    assert.equal(remBody.status, "conflict");
+    assert.equal(remBody.reason, "Revision mismatch");
+    assert.equal(remBody.currentRevision, 6);
+  } finally {
+    await server.close();
+    try {
+      fs.rmSync(tmpDir, { recursive: true, force: true });
+    } catch {}
+  }
+});
+
 // ── 5. Unit sanitization tests ────────────────────────────────────────────────
 
 test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce strict projections", () => {
@@ -725,6 +1146,7 @@ test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce st
     role: "leader",
     canMessage: true,
     handle: "psh_valid_123",
+    memberRef: "pmh_valid_member_123",
     petId: "secret_pet",
     rawSessionId: "secret_session",
   };
@@ -736,6 +1158,7 @@ test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce st
     role: "leader",
     canMessage: true,
     handle: "psh_valid_123",
+    memberRef: "pmh_valid_member_123",
   });
   assert.equal(memberSanitized.petId, undefined);
   assert.equal(memberSanitized.rawSessionId, undefined);
@@ -743,6 +1166,13 @@ test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce st
   // Invalid handle format is omitted
   const badHandleMember = extension.sanitizeTeamMember({ ...rawMember, handle: "invalid_handle" });
   assert.equal(badHandleMember.handle, undefined);
+
+  // Invalid memberRef format is omitted
+  const badMemberRef = extension.sanitizeTeamMember({ ...rawMember, memberRef: "psh_not_pmh" });
+  assert.equal(badMemberRef.memberRef, undefined);
+
+  const badMemberRef2 = extension.sanitizeTeamMember({ ...rawMember, memberRef: "pmh_" });
+  assert.equal(badMemberRef2.memberRef, undefined);
 
   // Full team details sanitization
   const rawTeamData = {
@@ -775,6 +1205,7 @@ test("sanitizeTeamDetails, sanitizeTeamObject, and sanitizeTeamMember enforce st
           role: "leader",
           canMessage: true,
           handle: "psh_valid_123",
+          memberRef: "pmh_valid_member_123",
         },
       ],
     },

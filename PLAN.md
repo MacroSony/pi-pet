@@ -119,7 +119,7 @@ Tauri input
 
 ### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-Lean peer wake decision gate、M3a.2-lite autonomous Team 与 M3b-lite Board 均已通过真实 Windows ↔ Homelab 闭环。M3c.0 Clean Tools、M3c.1 Visible Team/Board 与 M3c.2 Pet Chat 已完成自动化实现；Pet Chat 尚待 Windows ↔ Homelab GUI smoke，之后进入显式 gathering scene。不恢复旧版完整 Team ACL 平台。
+Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M3c.2 Pet Chat 均已通过真实 Windows ↔ Homelab 闭环。当前先收尾 lite Team 的动态 add/remove，再进入显式 gathering scene；不恢复旧版完整 Team ACL 平台。
 
 #### M3a.2-lite — Agent 自主拉群（完成）
 
@@ -127,11 +127,13 @@ Lean peer wake decision gate、M3a.2-lite autonomous Team 与 M3b-lite Board 均
 - Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team(action="create", name=..., targets=[...])`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
 - caller 自动成为 leader；targets 成为 member；每个 session 暂限一个 active Team。
 - `pet_team(action="status")` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
+- `pet_team(action="add", target=...)` 仅 leader 且 autonomy enabled；消费在线目标的 caller-scoped `psh_` catalog handle，并在使用时复查目标 session 仍 active/eligible。
+- `pet_team(action="remove", member=...)` 仅 leader 且 autonomy enabled；消费 status 返回的 caller/Team/revision/member/`joinedAtMs` 绑定 `pmh_`，因此目标离线后仍可移除。leader 不可被 remove；踢人不结束 session 或 pet。
 - `pet_team(action="dissolve")` 仅 leader 且 autonomy enabled 时可用。
 - Lite Team 本身只提供持久分组与发现信息，不自动授予 send/wake/session 权限，因此暂不做 target invite/accept。
 - 不新增 `pth_`、`pet_team_send`、角色编辑、Team UI、wake budget 或 hard lease。
 
-M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。Windows leader 与 Homelab member 已完成 Agent 自发现/create、双方 status、status fresh handle → `pet_send` 及 leader dissolve 的真实完整闭环。
+M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基础。Windows leader 与 Homelab member 已完成 Agent 自发现/create、双方 status、status fresh handle → `pet_send` 及 leader dissolve 的真实完整闭环。动态 add/remove 已完成 coordinator、Secure Remote SSH、root Pi extension、模型投影和自动化实现；尚待 Windows ↔ Homelab 最终 smoke 后封板。
 
 #### M3b-lite — Minimal Shared Board（完成）
 
@@ -321,8 +323,9 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 8. M3c.0 Clean Tools + distinct sessions：低噪音 model projection、custom TUI renderer、Pi `/name` 与同 host 撞名短标签。（完成）
 9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（完成；Windows smoke 已验证 WebView2 async 创建、跨 pet singleton、close/reopen 与实时 refresh）
 10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（完成；自动化、optimized build、真实 Pi loader 与 Windows↔Homelab 真机通过）
-11. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。（M3c.2 真机 gate 后）
-12. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
-13. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
-14. 实现 OpenCode adapter；探索 DSH 公开 plugin seam，不满足边界则维持部分 capability。
-15. 空闲时做中立 ChildActivity 小猫；最后再考虑 Claude、Codex、复杂社交和自由白板。
+11. M3a.2-lite membership lifecycle：leader 使用在线 `psh_` add、使用 status 返回的离线安全 `pmh_` remove。（自动化完成；待 Windows↔Homelab smoke）
+12. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。（membership smoke 后）
+13. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
+14. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
+15. 实现 OpenCode adapter；探索 DSH 公开 plugin seam，不满足边界则维持部分 capability。
+16. 空闲时做中立 ChildActivity 小猫；最后再考虑 Claude、Codex、复杂社交和自由白板。

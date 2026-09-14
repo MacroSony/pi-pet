@@ -2,6 +2,14 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-14 — Dynamic lite Team membership automation complete
+
+- Extended the fixed `pet_team` surface with leader-only `add` and `remove`, both still requiring the attach-local, default-off `/pet-team-autonomy` authorization. Online add consumes a caller-scoped catalog `psh_` and rechecks the exact target session is still active and eligible before mutation.
+- Added offline-safe `pmh_` removal references to leader projections only. The reference is a process-secret HMAC bound to caller, Team, exact revision, member and `joinedAtMs`; it contains no internal identity or persistent lookup record and fails after mutation, remove/re-add, dissolution, cross-caller use or coordinator process restart. No reference is exposed for the leader, and remove never ends the target session or pet.
+- Wired exact `/pet-team/add` and `/pet-team/remove` routes through the Clawd coordinator and the existing nonce-gated Secure Remote SSH ingress. Team-store OCC supplies explicit conflicts, active membership remains capped at eight, and membership still grants no additional send, wake, Board or session authority.
+- Added strict action validation, low-noise model projection, handle-free human renderers, direct route/server/SSH execution tests, active/inactive snapshot gates, non-leader guards, offline removal, stale-reference rejection, HMAC scope/secret checks and private-field leak assertions.
+- Verification passed: root **365/365**, Clawd focused Team/peer **85/85**, Clawd full **9,516 passed / 52 skipped / 0 failed**, real dual-extension Pi RPC loader exit 0 with empty stdout/stderr, syntax and diff checks clean. Independent review found no blocking issue. Windows ↔ Homelab add/offline-remove smoke remains the final acceptance gate.
+
 ## 2026-09-14 — Agent-owned Pet Chat speech and gestures
 
 - Pet Chat completion now prefers the last non-empty `pet_express.text` that was successfully delivered during the active same-session pet-originated turn, matching the words actually shown by the desktop pet. Clean final assistant text remains the fallback. Failed, emotion-only, mismatched-session, pre-activation and non-pet expressions remain excluded; generic tool metadata/results are never persisted.

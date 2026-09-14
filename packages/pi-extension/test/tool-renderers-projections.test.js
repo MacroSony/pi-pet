@@ -323,6 +323,63 @@ test("projectTeamCreateForModel and projectTeamDissolveForModel low-noise projec
   assert.deepEqual(projectTeamDissolveForModel(dissolveDetails), { status: "dissolved" });
 });
 
+test("projectTeamForModel preserves required add/remove handles and OCC conflict revision without private IDs", () => {
+  const addDetails = {
+    schemaVersion: "1",
+    kind: "team_add",
+    status: "active",
+    team: {
+      name: "Dynamic Team",
+      revision: 2,
+      callerRole: "leader",
+      members: [
+        { displayName: "Leader", host: "local", state: "idle", role: "leader", canMessage: false },
+        {
+          displayName: "Worker",
+          host: "homelab",
+          state: "running",
+          role: "member",
+          canMessage: true,
+          handle: "psh_secret_route_handle",
+          memberRef: "pmh_secret_removal_handle",
+          petId: "pet_must_not_leak",
+        },
+      ],
+    },
+  };
+  assert.deepEqual(projectTeamForModel(addDetails), {
+    status: "active",
+    team: {
+      name: "Dynamic Team",
+      revision: 2,
+      callerRole: "leader",
+      members: [
+        { displayName: "Leader", host: "local", state: "idle", role: "leader" },
+        {
+          displayName: "Worker",
+          host: "homelab",
+          state: "running",
+          role: "member",
+          handle: "psh_secret_route_handle",
+          memberRef: "pmh_secret_removal_handle",
+        },
+      ],
+    },
+  });
+
+  assert.deepEqual(projectTeamForModel({
+    schemaVersion: "1",
+    kind: "team_remove",
+    status: "conflict",
+    currentRevision: 3,
+    reason: "Revision mismatch",
+  }), {
+    status: "conflict",
+    currentRevision: 3,
+    reason: "Revision mismatch",
+  });
+});
+
 test("projectBoardReadForModel preserves markdown, revision, attribution and strips updatedAtMs/schemaVersion", () => {
   const boardReadDetails = {
     schemaVersion: "1",
@@ -416,6 +473,7 @@ const SECRET_PATTERNS = [
 
 function assertNoSecretLeaks(renderedText, contextName) {
   const str = String(renderedText);
+  assert.doesNotMatch(str, /\b(?:psh|pmh)_[A-Za-z0-9_-]+/, `[${contextName}] Leaked opaque handle in rendered output: ${str}`);
   for (const secret of SECRET_PATTERNS) {
     assert.equal(
       str.includes(secret),
@@ -565,6 +623,56 @@ test("pet_team status renderCall and renderResult (none and active team)", () =>
   assert.ok(resExpanded.includes("Your Role: member"));
   assert.ok(resExpanded.includes("• Worker Pi @ homelab — member (running)"));
   assertNoSecretLeaks(resExpanded, "team status expanded");
+});
+
+test("pet_team add/remove renderers never expose psh_ or pmh_ handles", () => {
+  const addCall = renderTeamCall({ action: "add", target: "psh_secret_add_handle" }).toString();
+  assert.equal(addCall, "pet_team add");
+  assertNoSecretLeaks(addCall, "team add call");
+
+  const removeCall = renderTeamCall({ action: "remove", member: "pmh_secret_remove_handle" }).toString();
+  assert.equal(removeCall, "pet_team remove");
+  assertNoSecretLeaks(removeCall, "team remove call");
+
+  const details = {
+    schemaVersion: "1",
+    kind: "team_add",
+    status: "active",
+    team: {
+      name: "Dynamic Team",
+      revision: 2,
+      callerRole: "leader",
+      members: [
+        { displayName: "Leader Pi", host: "local", state: "idle", role: "leader" },
+        {
+          displayName: "Worker Pi",
+          host: "homelab",
+          state: "running",
+          role: "member",
+          handle: "psh_secret_status_handle",
+          memberRef: "pmh_secret_status_handle",
+        },
+      ],
+    },
+  };
+  const addCollapsed = renderTeamResult({ isError: false, details }, { expanded: false }).toString();
+  assert.equal(addCollapsed, 'Added member to team "Dynamic Team" (rev 2, 2 members)');
+  assertNoSecretLeaks(addCollapsed, "team add result");
+  const addExpanded = renderTeamResult({ isError: false, details }, { expanded: true }).toString();
+  assert.ok(addExpanded.includes("Worker Pi @ homelab — member (running)"));
+  assertNoSecretLeaks(addExpanded, "team add expanded result");
+
+  const removeDetails = { ...details, kind: "team_remove", team: { ...details.team, revision: 3, members: details.team.members.slice(0, 1) } };
+  const removeCollapsed = renderTeamResult({ isError: false, details: removeDetails }, { expanded: false }).toString();
+  assert.equal(removeCollapsed, 'Removed member from team "Dynamic Team" (rev 3, 1 members)');
+  assertNoSecretLeaks(removeCollapsed, "team remove result");
+
+  const conflict = renderTeamResult({
+    isError: true,
+    details: { kind: "team_remove", status: "conflict", currentRevision: 4, reason: "Revision mismatch" },
+  }, { expanded: true }).toString();
+  assert.ok(conflict.includes("Revision mismatch"));
+  assertNoSecretLeaks(conflict, "team remove conflict");
 });
 
 test("pet_team dissolve renderCall and renderResult", () => {
