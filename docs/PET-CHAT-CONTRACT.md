@@ -18,7 +18,7 @@ Each persisted turn contains exactly:
 commandId, userText, assistantText, createdAtMs, completedAtMs
 ```
 
-The store retains at most 20 turns and a serialized file of at most 48 KiB. User text is limited to 2000 Unicode code points. Assistant text is stripped of disallowed C0/C1 controls and safely bounded to 8192 UTF-8 bytes.
+The store retains at most 20 turns and a serialized file of at most 48 KiB. User text is limited to 2000 Unicode code points. Assistant text is stripped of disallowed C0/C1 controls and safely bounded to 8192 UTF-8 bytes. For a correlated turn, `assistantText` is the last successfully delivered non-empty `pet_express.text` when one exists; otherwise it is the clean final assistant text.
 
 ## What enters history
 
@@ -29,10 +29,11 @@ The local Pi Pet extension and Clawd's managed remote Pi extension correlate com
 1. Register the claimed command before invoking `pi.sendUserMessage()`, because the Pi extension API returns `void` and may emit `input` before that invocation returns.
 2. Only an exact `input` event with `source === "extension"` may mark that registered command as observed. Interactive and RPC input cannot do so; peer notes use `pi.sendMessage()` and are not user candidates.
 3. Do not activate correlation on claim, dispatch, or `input`. Activate only when Pi emits the real user `message_end`, with exact text, compatible session identity, preserved queue order, and a message timestamp no earlier than dispatch.
-4. While a turn is active, only assistant blocks with `type === "text"` are considered. Thinking, tool calls, tool results, custom messages, and other blocks are ignored.
-5. A later user `message_end` finalizes the previous clean assistant text before matching the next queued pet turn. Thus a busy follow-up cannot absorb the current response.
-6. A clean `agent_end` finalizes the active turn. Assistant or lifecycle error/abort signals discard partial text.
-7. Session start, shutdown, and extension reload clear ephemeral correlation state.
+4. While a turn is active, assistant blocks with `type === "text"` provide the fallback completion text. Thinking, generic tool calls/results, custom messages, and other blocks are ignored.
+5. A successful `pet_express` receipt with `status === "delivered"` may contribute only its validated non-empty `text` to the active same-session candidate. Emotion-only, failed/rejected, mismatched-session, non-pet-originated, and pre-activation expressions are ignored. If several text expressions are delivered, the last one wins. This narrow projection represents speech already shown by the desktop pet; it does not retain tool metadata, arguments, results, emotion, IDs, or trace content.
+6. A later user `message_end` finalizes the previous clean candidate before matching the next queued pet turn. Thus a busy follow-up cannot absorb the current response.
+7. A clean `agent_end` finalizes the active turn, preferring delivered pet speech and falling back to final assistant text. Assistant or lifecycle error/abort signals discard the candidate, including any projected expression text.
+8. Session start, shutdown, and extension reload clear ephemeral correlation state.
 
 Observed inputs are not aged out merely because a preceding tool runs longer than the unobserved-dispatch timeout.
 
@@ -60,4 +61,4 @@ revision, messages[{role,text,createdAtMs}], pending
 
 Roles are restricted to `user` and `assistant`. It contains no command ID, pet ID, raw session ID, cwd, transcript, routing nonce, capability token, Team ID, handle, path, thinking, or tool payload.
 
-Double-clicking a pet opens a separate async-created `Pi Pet Chat` window. The title is generic. Message content is rendered only with `textContent`; no HTML or Markdown is interpreted. The chat window has a dedicated least-privilege Tauri capability, and closing or moving it cannot affect the main pet window lifecycle or saved pet position.
+Double-clicking a pet opens a separate async-created `Pi Pet Chat` window without synthesizing a local emotion. Dragging remains a direct local `drag` reaction, while conversational emotion/text is Agent-owned through `pet_express`. The title is generic. Message content is rendered only with `textContent`; no HTML or Markdown is interpreted. The chat window has a dedicated least-privilege Tauri capability, and closing or moving it cannot affect the main pet window lifecycle or saved pet position.

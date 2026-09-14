@@ -2,6 +2,13 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## 2026-09-14 — Agent-owned Pet Chat speech and gestures
+
+- Pet Chat completion now prefers the last non-empty `pet_express.text` that was successfully delivered during the active same-session pet-originated turn, matching the words actually shown by the desktop pet. Clean final assistant text remains the fallback. Failed, emotion-only, mismatched-session, pre-activation and non-pet expressions remain excluded; generic tool metadata/results are never persisted.
+- Removed renderer-owned single-click `happy`, hover `shocked`, double-click `shy`, and the obsolete Poke appearance setting. Drag remains immediate local embodied feedback, while double-click now opens Chat without synthesizing an emotion; conversational expression is Agent-owned.
+- Windows native drag acceptance passed after deferring WebView2 capture-loss teardown and polling the real Windows primary-button state through `GetAsyncKeyState`; the drag reaction remains visible until release and then restores the business state.
+- Verification: root **362/362**, renderer JS **85/85**, renderer Rust **121/121**, Clawd focused **62/62**, Clawd full **9,504 passed / 52 skipped / 0 failed**, custom-protocol production build successful, and a real Pi RPC loader with both TypeScript extensions exited 0 with empty stdout/stderr.
+
 ## 2026-09-13 — M3c.2 bounded Pet Chat automation complete
 
 - Added a canonical per-pet chat store under `<dataDir>/chat/`, bounded to 20 turns and 48 KiB. Persisted turns contain only command ID, pet-originated user text, final assistant text, and creation/completion timestamps; corrupt or oversized records fail closed.

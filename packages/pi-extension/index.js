@@ -1734,16 +1734,20 @@ function createChatTurnTracker(options = {}) {
     pendingDispatches = pendingDispatches.filter((pending) => pending.commandId !== commandId);
   }
 
+  function getCandidateCompletionText(candidate) {
+    if (!candidate || candidate.status !== "active") return null;
+    return candidate.latestExpressText || candidate.latestAssistantText || null;
+  }
+
   function finalizeCandidate(candidate) {
-    if (!candidate || !candidate.latestAssistantText || candidate.status !== "active") {
-      return;
-    }
+    const assistantText = getCandidateCompletionText(candidate);
+    if (!assistantText) return;
 
     const completedAtMs = nowFn();
     const completionData = {
       petId: candidate.petId,
       commandId: candidate.commandId,
-      assistantText: candidate.latestAssistantText,
+      assistantText,
       completedAtMs,
       rawSessionId: candidate.rawSessionId,
     };
@@ -1759,7 +1763,7 @@ function createChatTurnTracker(options = {}) {
           rawSessionId: candidate.rawSessionId,
           capabilityToken,
           commandId: candidate.commandId,
-          assistantText: candidate.latestAssistantText,
+          assistantText,
         };
         postPeerJson(config, "/pet-chat/complete", body).catch(() => {});
       }
@@ -1816,7 +1820,7 @@ function createChatTurnTracker(options = {}) {
     if (role === "user") {
       // 1. Finalize prior active candidate if any
       if (activeCandidate) {
-        if (activeCandidate.status === "active" && activeCandidate.latestAssistantText) {
+        if (getCandidateCompletionText(activeCandidate)) {
           finalizeCandidate(activeCandidate);
         }
         activeCandidate = null;
@@ -1860,6 +1864,7 @@ function createChatTurnTracker(options = {}) {
           dispatchedAtMs: matched.dispatchedAtMs,
           startedAtMs: nowFn(),
           latestAssistantText: null,
+          latestExpressText: null,
           status: "active",
         };
       } else {
@@ -1882,6 +1887,7 @@ function createChatTurnTracker(options = {}) {
       if (isErrorOrAborted) {
         activeCandidate.status = "error";
         activeCandidate.latestAssistantText = null;
+        activeCandidate.latestExpressText = null;
         return;
       }
 
@@ -1890,6 +1896,19 @@ function createChatTurnTracker(options = {}) {
         activeCandidate.latestAssistantText = text;
       }
     }
+  }
+
+  function noteDeliveredExpression({ status, text, rawSessionId } = {}) {
+    if (status !== "delivered" || !activeCandidate || activeCandidate.status !== "active") return false;
+    if (rawSessionId && activeCandidate.rawSessionId) {
+      const expressionSession = canonicalizePiSessionId(rawSessionId);
+      const candidateSession = canonicalizePiSessionId(activeCandidate.rawSessionId);
+      if (!expressionSession || !candidateSession || expressionSession !== candidateSession) return false;
+    }
+    const cleaned = sanitizeChatAssistantText(text);
+    if (!cleaned) return false;
+    activeCandidate.latestExpressText = cleaned;
+    return true;
   }
 
   function handleAgentEnd(event, ctx) {
@@ -1904,7 +1923,7 @@ function createChatTurnTracker(options = {}) {
       return;
     }
 
-    if (activeCandidate.status === "active" && activeCandidate.latestAssistantText) {
+    if (getCandidateCompletionText(activeCandidate)) {
       finalizeCandidate(activeCandidate);
     }
     activeCandidate = null;
@@ -1920,6 +1939,7 @@ function createChatTurnTracker(options = {}) {
     discardInboxDispatch,
     handleInput,
     handleMessageEnd,
+    noteDeliveredExpression,
     handleAgentEnd,
     clear,
     getActiveCandidate: () => (activeCandidate ? { ...activeCandidate } : null),
@@ -2653,6 +2673,7 @@ function piPetExtension(pi, dependencies = {}) {
   const peerWakeState = createPeerWakeState();
   const teamAutonomyState = createTeamAutonomyState();
   const boardWriteState = createBoardWriteState();
+  const chatTracker = dependencies.chatTracker || createChatTurnTracker();
 
   if (pi && typeof pi.registerCommand === "function") {
     pi.registerCommand("pet-peer-wake", {
@@ -3326,6 +3347,22 @@ function piPetExtension(pi, dependencies = {}) {
       async execute(toolCallId, params, signal, onUpdate, ctx) {
         const interaction = loadInteraction();
         const rawSessionId = readSessionId(ctx);
+        const finishExpression = (receipt) => {
+          if (
+            receipt && receipt.status === "delivered" &&
+            params && typeof params.text === "string" &&
+            chatTracker && typeof chatTracker.noteDeliveredExpression === "function"
+          ) {
+            try {
+              chatTracker.noteDeliveredExpression({
+                status: receipt.status,
+                text: params.text,
+                rawSessionId,
+              });
+            } catch {}
+          }
+          return formatResult(receipt);
+        };
 
         if (interaction) {
           const localReceipt = interaction.expressExpression({
@@ -3340,7 +3377,7 @@ function piPetExtension(pi, dependencies = {}) {
 
           // If delivered, expired, failed, or a schema rejection, return as-is
           if (!isIdentityOrSessionRejection(localReceipt)) {
-            return formatResult(localReceipt);
+            return finishExpression(localReceipt);
           }
 
           // Identity or session rejection -> check for remote fallback
@@ -3352,7 +3389,7 @@ function piPetExtension(pi, dependencies = {}) {
                 ? `${localReceipt.reason} (remote fallback unavailable)`
                 : "remote fallback unavailable",
             };
-            return formatResult(annotatedReceipt);
+            return finishExpression(annotatedReceipt);
           }
 
           const remoteReceipt = await dispatchRemoteExpression(remoteConfig, {
@@ -3362,14 +3399,14 @@ function piPetExtension(pi, dependencies = {}) {
             signal,
             now: Date.now,
           });
-          return formatResult(remoteReceipt);
+          return finishExpression(remoteReceipt);
         }
 
         // No runtime module configured -> check if remote config is present
         const remoteConfig = loadRemoteConfig();
         if (!remoteConfig) {
           const receipt = { status: "failed", reason: "PI_PET_RUNTIME_MODULE not configured or unloadable" };
-          return formatResult(receipt);
+          return finishExpression(receipt);
         }
 
         // Inline validation before remote POST
@@ -3388,7 +3425,7 @@ function piPetExtension(pi, dependencies = {}) {
             createdAtMs: Date.now(),
             updatedAtMs: Date.now(),
           };
-          return formatResult(receipt);
+          return finishExpression(receipt);
         }
 
         const remoteReceipt = await dispatchRemoteExpression(remoteConfig, {
@@ -3398,13 +3435,14 @@ function piPetExtension(pi, dependencies = {}) {
           signal,
           now: Date.now,
         });
-        return formatResult(remoteReceipt);
+        return finishExpression(remoteReceipt);
       },
     });
   }
 
   if (pi && typeof pi.on === "function") {
     attachInboxConsumer(pi, {
+      tracker: chatTracker,
       shouldTriggerPeerTurn: ({ sessionId }) => peerWakeState.isEnabledFor(sessionId),
       onSessionStart: (sessionId) => {
         peerWakeState.resetFor(sessionId);

@@ -84,7 +84,11 @@ test("pet_express registers and delivers with runtime module configured", async 
   );
 
   let toolDef = null;
-  extension({ registerTool(def) { toolDef = def; } });
+  const deliveredExpressions = [];
+  extension(
+    { registerTool(def) { toolDef = def; } },
+    { chatTracker: { noteDeliveredExpression(event) { deliveredExpressions.push(event); } } }
+  );
   assert.ok(toolDef, "tool registered");
   assert.equal(toolDef.name, "pet_express");
 
@@ -97,6 +101,11 @@ test("pet_express registers and delivers with runtime module configured", async 
   );
   assert.equal(result.details.status, "delivered");
   assert.equal(result.isError, false);
+  assert.deepEqual(deliveredExpressions, [{
+    status: "delivered",
+    text: "hello pet",
+    rawSessionId: "pi:ses-test-1",
+  }]);
 
   const event = JSON.parse(
     fs.readFileSync(path.join(dataDir, "events", `event-${petId}.json`), "utf8")

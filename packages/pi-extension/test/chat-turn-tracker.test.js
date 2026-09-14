@@ -734,3 +734,95 @@ test("inbox consumer records noteInboxDispatched and settles without direct inte
   // Verified zero direct interaction chat writes were performed
   assert.deepStrictEqual(interactionWrites, []);
 });
+
+test("delivered pet_express text overrides final assistant text for an active pet turn", () => {
+  const completedTurns = [];
+  const tracker = createChatTurnTracker({
+    now: () => 10000,
+    onComplete: (data) => completedTurns.push(data),
+  });
+
+  tracker.noteInboxDispatched({
+    petId: "pet-mika",
+    commandId: "cmd-express",
+    text: "摸摸头喵",
+    rawSessionId: "session-mika",
+    dispatchedAtMs: 9000,
+  });
+  tracker.handleInput({ text: "摸摸头喵", source: "extension" });
+  tracker.handleMessageEnd({
+    message: { role: "user", text: "摸摸头喵", timestamp: 9001 },
+  });
+
+  assert.strictEqual(tracker.noteDeliveredExpression({
+    status: "delivered",
+    text: "蹭蹭～被摸头好开心喵！",
+    rawSessionId: "session-mika",
+  }), true);
+  tracker.handleMessageEnd({
+    message: { role: "assistant", content: [{ type: "text", text: "蹭蹭～好开心喵！" }] },
+  });
+  tracker.handleAgentEnd({});
+
+  assert.strictEqual(completedTurns.length, 1);
+  assert.strictEqual(completedTurns[0].assistantText, "蹭蹭～被摸头好开心喵！");
+});
+
+test("pet_express projection accepts only delivered text for the active matching session and last delivery wins", () => {
+  const completedTurns = [];
+  const tracker = createChatTurnTracker({
+    now: () => 20000,
+    onComplete: (data) => completedTurns.push(data),
+  });
+
+  tracker.noteInboxDispatched({
+    petId: "pet-alpha",
+    commandId: "cmd-guarded-express",
+    text: "Respond",
+    rawSessionId: "session-alpha",
+    dispatchedAtMs: 19000,
+  });
+  tracker.handleInput({ text: "Respond", source: "extension" });
+  tracker.handleMessageEnd({
+    message: { role: "user", text: "Respond", timestamp: 19001 },
+  });
+
+  assert.strictEqual(tracker.noteDeliveredExpression({ status: "failed", text: "failed text", rawSessionId: "session-alpha" }), false);
+  assert.strictEqual(tracker.noteDeliveredExpression({ status: "delivered", emotion: "happy", rawSessionId: "session-alpha" }), false);
+  assert.strictEqual(tracker.noteDeliveredExpression({ status: "delivered", text: "wrong session", rawSessionId: "session-beta" }), false);
+  assert.strictEqual(tracker.noteDeliveredExpression({ status: "delivered", text: "first visible line", rawSessionId: "session-alpha" }), true);
+  assert.strictEqual(tracker.noteDeliveredExpression({ status: "delivered", text: "last\u0000 visible line", rawSessionId: "session-alpha" }), true);
+
+  tracker.handleAgentEnd({});
+  assert.strictEqual(completedTurns.length, 1);
+  assert.strictEqual(completedTurns[0].assistantText, "last visible line");
+});
+
+test("agent abort discards delivered pet_express text rather than persisting an aborted turn", () => {
+  const completedTurns = [];
+  const tracker = createChatTurnTracker({
+    now: () => 30000,
+    onComplete: (data) => completedTurns.push(data),
+  });
+
+  tracker.noteInboxDispatched({
+    petId: "pet-alpha",
+    commandId: "cmd-aborted-express",
+    text: "Abort later",
+    rawSessionId: "session-alpha",
+    dispatchedAtMs: 29000,
+  });
+  tracker.handleInput({ text: "Abort later", source: "extension" });
+  tracker.handleMessageEnd({
+    message: { role: "user", text: "Abort later", timestamp: 29001 },
+  });
+  assert.strictEqual(tracker.noteDeliveredExpression({
+    status: "delivered",
+    text: "partial visible response",
+    rawSessionId: "session-alpha",
+  }), true);
+
+  tracker.handleAgentEnd({ aborted: true });
+  assert.strictEqual(completedTurns.length, 0);
+  assert.strictEqual(tracker.getActiveCandidate(), null);
+});

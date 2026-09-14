@@ -23,7 +23,7 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - Bounded peer messaging, receiver-local opt-in wake, autonomous lite Teams, and a Team-scoped revisioned Markdown Board with OCC.
 - Distinct native Pi `/name` presentation, deterministic same-host collision suffixes, and low-noise custom renderers for the fixed five-tool Pi Pet surface: `pet_express`, `pet_list_sessions`, `pet_send`, `pet_team`, and `pet_board`.
 - Presentation-only Team badges and an independent read-only Team Board window showing sanitized member presence, revision, attribution, and Markdown as plain text. Team create/dissolve and Board writes refresh it without granting new authority.
-- Bounded Pet Chat for Pi: double-click a pet to open a separate chat window, send through the existing own-session inbox, and display only pet-originated user turns with reliably correlated final assistant text. Terminal/peer input, thinking, tool traffic, internal IDs and transcripts are excluded.
+- Bounded Pet Chat for Pi: double-click a pet to open a separate chat window, send through the existing own-session inbox, and display only pet-originated user turns. Replies prefer the last successfully delivered `pet_express.text` (what the pet actually said) and fall back to reliably correlated final assistant text; terminal/peer input, generic tool traffic, internal IDs and transcripts are excluded.
 - Presentation-write deduplication, disconnect/reconnect handling and renderer relaunch rules.
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.

@@ -169,10 +169,10 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 
 #### M3c.2 — Bounded Pet Chat（自动化完成，待 Windows ↔ Homelab 真机）
 
-- 双击 pet 通过 async Tauri command 打开独立 `Pi Pet Chat` 窗口；拖动仍优先，不会被提升成双击。窗口关闭、移动与 Clear 不改变 pet 位置、Pi session、Team 或 Board。
+- 双击 pet 通过 async Tauri command 打开独立 `Pi Pet Chat` 窗口，不再合成本地 shy/happy/shocked poke；拖动仍优先且保留直接本地 `drag` reaction，不会被提升成双击。对话情绪与文本由 Agent 的 `pet_express` 负责。窗口关闭、移动与 Clear 不改变 pet 位置、Pi session、Team 或 Board。
 - Clawd 是本地与 Secure Remote SSH 的 canonical chat writer；每个 pet 使用 `<dataDir>/chat/chat-<petId>.json`，最多 20 turns / 48 KiB。user text 最多 2000 Unicode code points，assistant text 最多 8192 UTF-8 bytes。
 - `/pet-inbox` 接受 pet 消息后 best-effort 记录 pending user turn；记录失败不改变 delivery receipt。local/remote consumer 必须在调用 `pi.sendUserMessage()` 前登记 dispatch，避免 Pi 同步触发 `input` 的竞态。
-- 只有 `input.source === "extension"` 的 exact origin 可在真实 user `message_end` 激活 turn；interactive、RPC、peer、thinking、tool call/result、error/abort 与完整 transcript 均不进入 history。
+- 只有 `input.source === "extension"` 的 exact origin 可在真实 user `message_end` 激活 turn；interactive、RPC、peer、thinking、generic tool call/result、error/abort 与完整 transcript 均不进入 history。唯一窄投影是 active same-session turn 中成功 `delivered` 的 `pet_express.text`：Chat 优先记录宠物实际展示的最后一条文本，无有效表达时 fallback 到 final assistant text；不保存 emotion、tool metadata/result 或 IDs。
 - busy follow-up 只在其真实 user `message_end` 开始时接管 active turn；当前 assistant response 不会被后续 queued pet input 吸附。Observed origin 不因前置长工具超过五分钟而过期。
 - completion 复用 attach-scoped peer capability 和现有 SSH reverse tunnel；read/clear 仅本地桌宠可用，remote ingress 只开放 authenticated complete。UI projection 隐藏 commandId、petId、raw session、cwd、token、handle 与路径，并只用 `textContent`。
 - 冻结细节见 [PET-CHAT-CONTRACT.md](docs/PET-CHAT-CONTRACT.md)。自动化与 optimized build 已通过；下一 gate 是本地 Linux smoke 与 Windows ↔ Homelab remote completion/busy queue/drag-double-click/Clear 真机。

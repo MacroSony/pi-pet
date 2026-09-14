@@ -150,15 +150,16 @@ The extension automatically attaches an inbox consumer loop when Pi initializes 
 
 ## Bounded Pet Chat Correlation
 
-Clawd records the user half of an accepted desktop-pet message in its canonical per-pet store. This extension supplies only the reliably associated final assistant half:
+Clawd records the user half of an accepted desktop-pet message in its canonical per-pet store. This extension supplies only a reliably associated assistant half, preferring speech actually delivered through the pet and otherwise falling back to final assistant text:
 
 1. An exact `input` with `source === "extension"` marks a pre-registered inbox dispatch as observed, but does not activate it.
 2. The real Pi user `message_end` activates the candidate only when text, queue order, timestamp and session identity agree.
-3. Assistant `message_end` accepts only `type: "text"` blocks. Thinking, tool calls/results, peer custom messages, errors and aborts are discarded.
-4. A later user message finalizes the previous clean candidate before starting a queued follow-up; a clean `agent_end` finalizes the last turn.
-5. Session start/shutdown/reload clears ephemeral tracking. Completion transport failure is swallowed and never changes the already-terminal inbox receipt or re-dispatches input.
+3. Assistant `message_end` accepts only `type: "text"` blocks as fallback text. Thinking, generic tool calls/results and peer custom messages are discarded.
+4. During the active same-session candidate, only a successful `pet_express` receipt with `status: "delivered"` may project its validated non-empty `text`; the last delivered text wins. Emotion-only, failed/rejected, mismatched-session and unrelated expressions are ignored. No tool metadata, result, emotion or ID enters history.
+5. A later user message finalizes the previous clean candidate before starting a queued follow-up; a clean `agent_end` finalizes the last turn, preferring delivered pet speech. Errors and aborts discard the candidate.
+6. Session start/shutdown/reload clears ephemeral tracking. Completion transport failure is swallowed and never changes the already-terminal inbox receipt or re-dispatches input.
 
-Assistant completion is control-sanitized and bounded to 8192 UTF-8 bytes. The authenticated completion uses the existing attach-scoped peer capability and `/pet-chat/complete`; the caller never supplies a pet ID. Chat read/clear are local-desktop-only coordinator operations and are not Agent tools.
+The selected completion text is control-sanitized and bounded to 8192 UTF-8 bytes. The authenticated completion uses the existing attach-scoped peer capability and `/pet-chat/complete`; the caller never supplies a pet ID. Chat read/clear are local-desktop-only coordinator operations and are not Agent tools.
 
 ## Peer Messaging and Lean Wake PoC
 
