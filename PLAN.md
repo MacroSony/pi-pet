@@ -167,7 +167,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - `team-board` 使用独立最小 Tauri capability，只允许基础 IPC、状态事件 listen 和关闭窗口，不继承 pet drag/position/event emit 权限。
 - 同时补齐 root presentation adapter 对 Clawd `displayTitle` 的消费，pet label 现在与 `/name` 和同 host collision suffix 一致。
 
-#### M3c.2 — Bounded Pet Chat（自动化完成，待 Windows ↔ Homelab 真机）
+#### M3c.2 — Bounded Pet Chat（完成；自动化与 Windows ↔ Homelab 真机通过）
 
 - 双击 pet 通过 async Tauri command 打开独立 `Pi Pet Chat` 窗口，不再合成本地 shy/happy/shocked poke；拖动仍优先且保留直接本地 `drag` reaction，不会被提升成双击。对话情绪与文本由 Agent 的 `pet_express` 负责。窗口关闭、移动与 Clear 不改变 pet 位置、Pi session、Team 或 Board。
 - Clawd 是本地与 Secure Remote SSH 的 canonical chat writer；每个 pet 使用 `<dataDir>/chat/chat-<petId>.json`，最多 20 turns / 48 KiB。user text 最多 2000 Unicode code points，assistant text 最多 8192 UTF-8 bytes。
@@ -175,7 +175,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - 只有 `input.source === "extension"` 的 exact origin 可在真实 user `message_end` 激活 turn；interactive、RPC、peer、thinking、generic tool call/result、error/abort 与完整 transcript 均不进入 history。唯一窄投影是 active same-session turn 中成功 `delivered` 的 `pet_express.text`：Chat 优先记录宠物实际展示的最后一条文本，无有效表达时 fallback 到 final assistant text；不保存 emotion、tool metadata/result 或 IDs。
 - busy follow-up 只在其真实 user `message_end` 开始时接管 active turn；当前 assistant response 不会被后续 queued pet input 吸附。Observed origin 不因前置长工具超过五分钟而过期。
 - completion 复用 attach-scoped peer capability 和现有 SSH reverse tunnel；read/clear 仅本地桌宠可用，remote ingress 只开放 authenticated complete。UI projection 隐藏 commandId、petId、raw session、cwd、token、handle 与路径，并只用 `textContent`。
-- 冻结细节见 [PET-CHAT-CONTRACT.md](docs/PET-CHAT-CONTRACT.md)。自动化与 optimized build 已通过；下一 gate 是本地 Linux smoke 与 Windows ↔ Homelab remote completion/busy queue/drag-double-click/Clear 真机。
+- 冻结细节见 [PET-CHAT-CONTRACT.md](docs/PET-CHAT-CONTRACT.md)。自动化、optimized build、Windows 本地 drag/double-click/Agent-owned speech 与 Windows ↔ Homelab remote completion/exclusion/Clear 真机 gate 均已通过。
 
 #### Parked：完整 Team ACL 与 Structured Board
 
@@ -320,7 +320,7 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 7. 真实 Windows/Homelab read/write/conflict/content-integrity smoke。（完成；structured Board 继续 parked）
 8. M3c.0 Clean Tools + distinct sessions：低噪音 model projection、custom TUI renderer、Pi `/name` 与同 host 撞名短标签。（完成）
 9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（完成；Windows smoke 已验证 WebView2 async 创建、跨 pet singleton、close/reopen 与实时 refresh）
-10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（自动化、optimized build、真实 Pi loader 已通过；待 Linux/Windows↔Homelab 真机）
+10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（完成；自动化、optimized build、真实 Pi loader 与 Windows↔Homelab 真机通过）
 11. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。（M3c.2 真机 gate 后）
 12. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
 13. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
