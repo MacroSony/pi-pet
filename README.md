@@ -30,7 +30,7 @@ Harness hooks / extensions → Clawd sessions + Remote SSH
 - A versioned, dependency-free CommonJS runtime and TypeScript contracts in **this repository**.
 - Clawd keeps its hooks, session state machine and SSH transport; its Pi Pet bridge is only a trusted-operator loader.
 
-**Not implemented yet:** Team gathering/disperse movement, richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. Team badge/Board and Pet Chat have passed automated and Windows ↔ Homelab GUI smoke; dynamic Team add/remove has automated coverage and awaits its final cross-machine smoke. See [the Pet Chat contract](docs/PET-CHAT-CONTRACT.md), [implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
+**Not implemented yet:** richer collaboration animation/bubble queues, position-query tools, TTS, and renderer playback acknowledgement. Explicit gathering/end-in-place is implemented and Linux-verified; [Windows native/DPI/visual acceptance](docs/GATHERING-WINDOWS-ACCEPTANCE.md) is pending. Team badge/Board, Pet Chat and dynamic Team add/remove have passed Windows ↔ Homelab GUI smoke. See [the Pet Chat contract](docs/PET-CHAT-CONTRACT.md), [implemented extraction boundary](docs/BOUNDARY-CONTRACT.md), [inbox contract v1](docs/PI-INBOX-CONTRACT.md), [interaction draft](docs/drafts/phase-a-interaction-contract.md) and [current roadmap](PLAN.md).
 
 ## Source checkout
 

@@ -2,6 +2,12 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## Gathering low-risk closure — capacity eviction and morning checklist
+
+- Terra independently reviewed cancellation/restart/settled persistence read-only. Parent reproduced the report-cap eviction defect with a failing regression: evicted membership could still receive its old scene. Capacity eviction now cancels participation, just like TTL expiry; the bound is enforced in the current report call.
+- Added a fresh-coordinator no-replay regression. Root **420/420**, Clawd **9,523 pass / 52 skip**, renderer JS **89/89**, Rust **128/128**; neither submodule changed. No new GUI/native release build or Windows validation claimed in this closure.
+- Prepared [Windows CMD update and acceptance steps](docs/GATHERING-WINDOWS-ACCEPTANCE.md) and a [review/evidence report](docs/GATHERING-NIGHT-REVIEW.md). No FIFO/M3c.4, permission, hook or Windows-environment changes.
+
 ## M3c.3 — Explicit region-bounded gathering implemented; Linux verified
 
 - Completed coordinator Team-to-live-window mapping, deterministic bounded seats, explicit gather/end-in-place, native main-thread movement, local drag takeover, cancellation freshness, lifecycle invalidation and settled-position persistence. Five tools, Pi permission switches, Board and model-turn behavior are unchanged.

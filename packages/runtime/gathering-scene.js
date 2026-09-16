@@ -88,7 +88,10 @@ function createGatheringScene({ readArea, resolveTeam, now = Date.now } = {}) {
     }
     if (reports.size <= MAX_REPORTS) return;
     [...reports.entries()].sort((a, b) => a[1].at - b[1].at).slice(0, reports.size - MAX_REPORTS)
-      .forEach(([petId]) => reports.delete(petId));
+      .forEach(([petId]) => {
+        cancelParticipant(petId);
+        reports.delete(petId);
+      });
   }
   function cancelParticipant(petId) {
     if (!scene) return;
@@ -147,6 +150,9 @@ function createGatheringScene({ readArea, resolveTeam, now = Date.now } = {}) {
     if (previous && previous.instanceId === data.instanceId && data.seq <= previous.seq) return reject("stale_seq");
     if (previous && previous.instanceId !== data.instanceId) cancelParticipant(data.petId);
     reports.set(data.petId, { ...clone(data), at: time });
+    // Enforce the bound in this call, not on the next report. Eviction has the
+    // same no-rejoin semantics as TTL expiry, including unseen assignments.
+    if (reports.size > MAX_REPORTS) prune(time);
 
     const current = validateScene();
     if (!current.ok && (current.reason === "area_unavailable" || current.reason === "team_unavailable")) return reject(current.reason);

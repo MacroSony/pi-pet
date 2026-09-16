@@ -198,6 +198,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - 不新增 Agent 工具或 Pi 权限开关，不自动 focus/open Board，不按 proximity 推断关系。多区域、自动漫游和复杂多 Team 空间调度后置。
 - 已接通 coordinator 权威 Team/在线窗口映射、3s 几何 freshness、固定网格座位、native 串行报告/短动画、900ms 本地反馈过期中止、200ms settled 写盘；控制代数能取消“鼠标按下和松开都发生在两次报告之间”的未知待取 scene。
 - 验证：root418/418、Clawd9523 pass/52 skip、renderer JS89/89、Rust128/128、production custom-protocol build；隔离 Linux 三独立进程真窗口 smoke。此证据不等于 Windows gate 通过。
+- 睡前低风险收尾：Terra 只读复审，父代理复现并修正报告容量淘汰未取消旧 scene 的边界，补 fresh-coordinator 回归；root420/420，其余套件仍通过，两个 submodule 未改。[收尾报告](docs/GATHERING-NIGHT-REVIEW.md) / [Windows CMD 更新与验收清单](docs/GATHERING-WINDOWS-ACCEPTANCE.md)。不提前上 FIFO/M3c.4。
 
 #### Parked：完整 Team ACL 与 Structured Board
 

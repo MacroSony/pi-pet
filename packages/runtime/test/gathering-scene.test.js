@@ -128,3 +128,33 @@ test("a whole drag between reports cancels an assignment not fetched yet", () =>
   assert.equal(f.scene.start({schemaVersion:'1',petId:'p1',instanceId:'one'}).status,'started');
   assert.ok(f.scene.report(report('p1','one',3,{controlEpoch:1})).scene);
 });
+
+test("capacity eviction cancels only the evicted pet and fresh reports cannot rejoin", () => {
+  const f = fixture(); startTwo(f);
+  f.setTime(1001);
+  assert.ok(f.scene.report(report("p2", "two", 1)).scene);
+  // One more report than the 128-entry bound; only p1 is older than this batch.
+  for (let i = 0; i < 127; i++) {
+    assert.equal(f.scene.report(report(`other_${i}`, `window_${i}`, 0)).status, "ok");
+  }
+  f.setTime(1002);
+  assert.ok(f.scene.report(report("p2", "two", 2)).scene);
+  assert.equal(f.scene.report(report("p1", "one", 1)).scene, null);
+  assert.equal(f.scene.report(report("p1", "one", 2)).scene, null);
+  assert.ok(f.scene.report(report("p2", "two", 3)).scene);
+  assert.equal(f.scene.start({ schemaVersion: "1", petId: "p1", instanceId: "one" }).status, "started");
+  assert.ok(f.scene.report(report("p1", "one", 3)).scene);
+});
+
+test("a fresh coordinator retains no old scene even with the same Team, instance and reports", () => {
+  const old = fixture(); startTwo(old);
+  const oldId = old.scene.report(report("p1", "one", 1)).scene.sceneId;
+  const fresh = createGatheringScene({
+    readArea: () => area(), resolveTeam: (petId) => old.teams.get(petId), now: () => 1000,
+  });
+  assert.equal(fresh.report(report("p1", "one", 2)).scene, null);
+  assert.equal(fresh.report(report("p2", "two", 1)).scene, null);
+  assert.equal(fresh.end({ schemaVersion: "1", petId: "p1", instanceId: "one" }).reason, "not_active");
+  assert.equal(fresh.start({ schemaVersion: "1", petId: "p1", instanceId: "one" }).status, "started");
+  assert.notEqual(fresh.report(report("p1", "one", 3)).scene.sceneId, oldId);
+});
