@@ -2,6 +2,13 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## Gathering — Windows single-display functional acceptance
+
+- User-tested environment: **3840×2160, 125%, one Windows display**; functional source root `4cf0842`, Clawd `4bd58a3f`, renderer `733000d`.
+- User confirmed activity-area editing/shared setting, out-of-work-area rejection, insufficient capacity, Disable and stale-editor OCC; explicit gathering/in-area animation; two local plus one Homelab-backed pet and SSH reconnect preserving manual placement until explicit regather.
+- Right-click alone causes the observed focus loss, so the current observation is menu activation, not a confirmed movement-focus defect. This does not certify every focus/modal-input edge case.
+- Accepted scope is the reported single-display PoC cases. Multi-display/negative-origin/mixed-DPI and unreported edge cases remain unverified; visual review, starting with long hints, is next. No automatic gathering/FIFO was added. [Detailed acceptance record](docs/GATHERING-WINDOWS-ACCEPTANCE.md).
+
 ## Gathering low-risk closure — capacity eviction and morning checklist
 
 - Terra independently reviewed cancellation/restart/settled persistence read-only. Parent reproduced the report-cap eviction defect with a failing regression: evicted membership could still receive its old scene. Capacity eviction now cancels participation, just like TTL expiry; the bound is enforced in the current report call.
@@ -13,7 +20,7 @@
 - Completed coordinator Team-to-live-window mapping, deterministic bounded seats, explicit gather/end-in-place, native main-thread movement, local drag takeover, cancellation freshness, lifecycle invalidation and settled-position persistence. Five tools, Pi permission switches, Board and model-turn behavior are unchanged.
 - Terra supplied layout/protocol initial work; parent took over the timed-out coordinator task, implemented native/UI, reviewed and tested. Native review findings and Linux-detected mutex/pre-map geometry issues were addressed; control-epoch regression covers a complete drag between reports before the scene ID is known.
 - Root **418/418**, renderer JS **89/89**, Rust **128/128**, Clawd **9,523 pass / 52 skip / 0 fail**, production custom-protocol release build. Isolated three-process Linux GUI smoke used real native windows/production routes and fixture session data; menu gather/end, native drag/no-pullback/regather, focus and settled writes passed. This is not Windows or fresh real-SSH acceptance.
-- **Windows native input, DPI/multi-monitor and visuals remain tomorrow's gate.** No managed-hook repair or Pi restart is required; Clawd restart and matching rebuilt renderer are required. See [design, implementation and smoke evidence](docs/GATHERING-SCENE-DESIGN.md).
+- **At this initial delivery, Windows acceptance was pending; see the later single-display acceptance above. Multi-monitor/mixed-DPI and visual work remain outstanding.** No managed-hook repair or Pi restart is required; Clawd restart and matching rebuilt renderer are required. See [design, implementation and smoke evidence](docs/GATHERING-SCENE-DESIGN.md).
 
 ## M3c.3a — Desktop activity-area configuration implemented (Windows gate pending)
 

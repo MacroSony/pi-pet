@@ -1,6 +1,17 @@
 # M3c.3 — Windows 更新与验收清单
 
-状态：**待 Windows 实机验收**。Linux 自动化/三窗口 smoke 已通过，不代表 Windows 原生交互、混合 DPI 或视觉已通过。
+状态：**Windows 单屏 PoC 功能收尾已获用户确认；视觉待收口，多屏/混合 DPI 未测。** 下方保留完整操作清单；本段只归档实际反馈，不把未逐项报告的条目一并勾通过。
+
+## 当前实机反馈
+
+- 环境：Windows 单屏 **3840×2160、125%**；测试功能版本 root `4cf0842`，Clawd `4bd58a3f`、renderer `733000d`。没有第二块屏幕。
+- 用户确认区域编辑器第一关正常（打开、原生拖动/缩放、Apply/Cancel、另一只 pet 读取同一区域）；区域越界会拒绝，容量不足测试正常。
+- 用户确认显式 Gather 效果和区内短动画正常；区外直接定位属于预定行为，不是动画故障。
+- 两只 Windows 本地 + 一只 Homelab remote-backed pet 的三只集合正常；SSH Disconnect/Reconnect 后恢复手动放在区域外的位置，不擅自回队，再显式 Gather 可重新集合。
+- 用户确认 Disable/重新配置与双编辑器旧 revision 冲突两项收尾正常。
+- 仅右键 pet 就会让原应用失焦，当前观察归因于菜单交互；不把它当已证实的移动抢焦 bug，也不将所有高级焦点/阻塞场景判为已测。
+- 未测：多屏、负原点、跨屏混合 DPI/屏幕移除，以及没有逐项反馈的其他边界。无需为本轮单屏 PoC 专门找多屏硬件。
+- 下一步：核对 Windows 长提示气泡的裁切、滚动条及布局挤压，做必要的最小视觉修正。自动 Gather 和 FIFO 没有因这次功能验收而自动启用。
 
 本次只验活动区域和显式 Gathering；不加 FIFO、自动漫游、Team 权限或模型编排。完整边界见 [Gathering design](GATHERING-SCENE-DESIGN.md)。
 

@@ -119,7 +119,7 @@ Tauri input
 
 ### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M3c.2 Pet Chat 均已通过真实 Windows ↔ Homelab 闭环。动态 add/remove 与 session 权限恢复均已真机封板；当前 Gathering Linux 链路已实现，下一步 Windows/DPI/视觉验收；不恢复旧版完整 Team ACL 平台。
+Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M3c.2 Pet Chat 均已通过真实 Windows ↔ Homelab 闭环。动态 add/remove 与 session 权限恢复均已真机封板；当前 Gathering 的 Linux 链路与用户报告的 Windows 单屏功能用例已通过，下一步视觉收口；多屏/混合 DPI 未测；不恢复旧版完整 Team ACL 平台。
 
 #### M3a.2-lite — Agent 自主拉群（完成）
 
@@ -186,7 +186,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - root `3496a58`：397/397 测试、真实 Pi SessionManager JSONL/lifecycle 验证、双扩展 loader 与用户 Windows/Homelab 交互验收通过，正式封板。
 - Pi 在首条 assistant 回复前可能尚未创建 JSONL；沿用原生 flush 行为，不直接改写 session 文件。无全局默认或 Agent 自行授权工具。
 
-#### M3c.3 — Region-bounded Gathering（Linux实现/测试完成，Windows原生/DPI/视觉gate待做）
+#### M3c.3 — Region-bounded Gathering（Linux及Windows单屏功能通过，视觉收口中；多屏未测）
 
 本轮采用用户提出的**自由活动区域**，替代此前“集合后返回日常原位”的要求。完整切片见 [GATHERING-SCENE-DESIGN.md](docs/GATHERING-SCENE-DESIGN.md)。
 
@@ -196,6 +196,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - 用户拖动取消该成员本轮自动布局，迟到命令不得拉回；下次显式集合才重新参与。
 - 保留最终位置持久化作为重启便利，但不再设 home/集合前位置栈；禁止动画每帧写盘。
 - 不新增 Agent 工具或 Pi 权限开关，不自动 focus/open Board，不按 proximity 推断关系。多区域、自动漫游和复杂多 Team 空间调度后置。
+- Windows实机：单屏3840×2160/125%；区域编辑/越界/容量/Disable/OCC、显式集合/区内动画、2本地+1Homelab及断线恢复不自动回队，用户均确认正常。菜单右键失焦不是已证实的自动移动抢焦。按已报告范围收尾，不把多屏/混合DPI或未逐项反馈的边界算通过；下一步先看长气泡视觉。
 - 已接通 coordinator 权威 Team/在线窗口映射、3s 几何 freshness、固定网格座位、native 串行报告/短动画、900ms 本地反馈过期中止、200ms settled 写盘；控制代数能取消“鼠标按下和松开都发生在两次报告之间”的未知待取 scene。
 - 验证：root418/418、Clawd9523 pass/52 skip、renderer JS89/89、Rust128/128、production custom-protocol build；隔离 Linux 三独立进程真窗口 smoke。此证据不等于 Windows gate 通过。
 - 睡前低风险收尾：Terra 只读复审，父代理复现并修正报告容量淘汰未取消旧 scene 的边界，补 fresh-coordinator 回归；root420/420，其余套件仍通过，两个 submodule 未改。[收尾报告](docs/GATHERING-NIGHT-REVIEW.md) / [Windows CMD 更新与验收清单](docs/GATHERING-WINDOWS-ACCEPTANCE.md)。不提前上 FIFO/M3c.4。
@@ -348,7 +349,7 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（完成；自动化、optimized build、真实 Pi loader 与 Windows↔Homelab 真机通过）
 11. M3a.2-lite membership lifecycle：leader 使用在线 `psh_` add、使用 status 返回的离线安全 `pmh_` remove。（自动化与 Windows↔Homelab 真机验收完成）
     - Session-persistent permissions 插队切片已封板（root `3496a58`，Windows/Homelab 双机通过）。
-12. M3c.3 Region-bounded Gathering：用户定义活动区域、显式 Team 集合/结束、结束后原地待命、拖动抢占、无焦点移动与停止时位置保存；先单区域2–4只，不做漫游。（Linux链路完成；Windows/DPI/视觉验收待做，见独立文档）
+12. M3c.3 Region-bounded Gathering：用户定义活动区域、显式 Team 集合/结束、结束后原地待命、拖动抢占、无焦点移动与停止时位置保存；先单区域2–4只，不做漫游。（Linux及Windows单屏已报告功能通过；视觉收口中，多屏/混合DPI未测）
 13. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
 14. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
 15. 实现 OpenCode adapter；探索 DSH 公开 plugin seam，不满足边界则维持部分 capability。

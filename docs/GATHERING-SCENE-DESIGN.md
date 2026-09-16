@@ -1,6 +1,6 @@
 # M3c.3 — Region-bounded Gathering
 
-Status: activity-area configuration and explicit gathering are implemented and Linux-verified. Windows native input, mixed-DPI/multi-screen and visual acceptance remain pending. This replaces pre-gather position restoration in the earlier roadmap/draft.
+Status: activity-area configuration and explicit gathering are Linux-verified, and the user has accepted the reported Windows single-display functional cases at 3840×2160 / 125%, including local + remote-backed gathering and SSH reconnect. Visual review is next; multi-display/mixed-DPI and unreported edge cases remain unverified. See the [current Windows acceptance record](GATHERING-WINDOWS-ACCEPTANCE.md). This replaces pre-gather position restoration in the earlier roadmap/draft.
 
 ## Product goal
 
