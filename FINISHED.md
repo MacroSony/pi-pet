@@ -2,6 +2,19 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## M3c.3 — Explicit region-bounded gathering implemented; Linux verified
+
+- Completed coordinator Team-to-live-window mapping, deterministic bounded seats, explicit gather/end-in-place, native main-thread movement, local drag takeover, cancellation freshness, lifecycle invalidation and settled-position persistence. Five tools, Pi permission switches, Board and model-turn behavior are unchanged.
+- Terra supplied layout/protocol initial work; parent took over the timed-out coordinator task, implemented native/UI, reviewed and tested. Native review findings and Linux-detected mutex/pre-map geometry issues were addressed; control-epoch regression covers a complete drag between reports before the scene ID is known.
+- Root **418/418**, renderer JS **89/89**, Rust **128/128**, Clawd **9,523 pass / 52 skip / 0 fail**, production custom-protocol release build. Isolated three-process Linux GUI smoke used real native windows/production routes and fixture session data; menu gather/end, native drag/no-pullback/regather, focus and settled writes passed. This is not Windows or fresh real-SSH acceptance.
+- **Windows native input, DPI/multi-monitor and visuals remain tomorrow's gate.** No managed-hook repair or Pi restart is required; Clawd restart and matching rebuilt renderer are required. See [design, implementation and smoke evidence](docs/GATHERING-SCENE-DESIGN.md).
+
+## M3c.3a — Desktop activity-area configuration implemented (Windows gate pending)
+
+- Added a coordinator-owned, desktop-wide activity-area setting, strict bounded physical geometry and monitor snapshot, atomic persistence and whole-setting OCC. Local native routes reject browser origins and Remote SSH; no Agent tool or Pi permission was added.
+- Added a temporary async Tauri area editor under pet Settings with native drag/resize, Apply/Cancel/Disable, full-frame work-area validation, stale-screen warning and stale-editor conflict handling. Closing/moving this secondary window leaves pet/Chat/Board state alone. This slice configures an area only; it does not gather or move pets.
+- Parent implemented the slice; DeepSeek Flash via in-process backend performed read-only review without blockers. Verification: root **401/401**, renderer JS **88/88**, Rust **124/124**, Clawd **9,521 pass / 52 skip / 0 fail**, production custom-protocol release build successful. Isolated Linux production-binary GUI smoke verified persistence/restart, cancel, bounds rejection, conflict, disable and pet-position isolation. Windows native gestures/mixed-DPI acceptance remains pending.
+
 ## Session-persistent permission slice — closed after Windows ↔ Homelab acceptance
 
 - Root extension only: the three explicit user switches append strict version-1 `pi-pet-permissions` custom snapshots through Pi. Resume/reload/tree use only the current branch; new sessions default off, fork inherits the selected path, and malformed latest snapshots fail closed.

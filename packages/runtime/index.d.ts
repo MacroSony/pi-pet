@@ -643,3 +643,34 @@ export declare const MAX_CHAT_TURNS: 20;
 export declare const MAX_CHAT_FILE_BYTES: 49152;
 export declare const MAX_USER_TEXT_CODE_POINTS: 2000;
 export declare const MAX_ASSISTANT_TEXT_BYTES: 8192;
+
+/** Desktop-only local user setting. Coordinates are physical pixels. */
+export interface ActivityRect { x: number; y: number; width: number; height: number; }
+export interface ActivityArea {
+  monitor: { name: string; workArea: ActivityRect; scaleFactor: number };
+  rect: ActivityRect;
+}
+export interface ActivityAreaRecord { schemaVersion: "1"; revision: number; area: ActivityArea | null; }
+export declare function validateActivityArea(area: unknown): area is ActivityArea;
+export declare function containsRect(outer: ActivityRect, inner: ActivityRect): boolean;
+export declare function createActivityAreaStore(options?: { dataDir?: string; env?: Record<string, string | undefined> }): {
+  read(): ActivityAreaRecord;
+  write(input: { baseRevision: number; area: ActivityArea | null }): ActivityAreaRecord & { status: "updated" | "conflict" };
+};
+
+export interface GatheringReport {
+  schemaVersion: "1"; petId: string; instanceId: string; seq: number; controlEpoch: number; rect: ActivityRect;
+  scaleFactor: number; monitors: ActivityArea["monitor"][]; blocked: boolean;
+  cancelSceneId: string | null; outcome: "moving" | "arrived" | "cancelled" | null;
+}
+export interface GatheringSceneTarget { x: number; y: number; width: number; height: number; }
+export interface GatheringSceneResponse { status: "ok"; scene: null | { sceneId: string; target: GatheringSceneTarget; area: ActivityArea }; }
+export declare function createGatheringScene(options: {
+  readArea(): ActivityAreaRecord;
+  resolveTeam(petId: string): { teamId: string; members: string[]; eligible: string[] } | null;
+  now?: () => number;
+}): {
+  report(data: GatheringReport): GatheringSceneResponse | { status: "rejected"; reason: string };
+  start(data: { schemaVersion: "1"; petId: string; instanceId: string }): { status: "started"; participants: number } | { status: "rejected"; reason: string };
+  end(data: { schemaVersion: "1"; petId: string; instanceId: string }): { status: "ended" } | { status: "rejected"; reason: string };
+};
