@@ -1439,6 +1439,133 @@ function setSharedPeerWakeMode(mode, globalObject = globalThis) {
   }
 }
 
+const PERMISSION_ENTRY_TYPE = "pi-pet-permissions";
+
+function getSharedPeerWakeMode(globalObject = globalThis) {
+  try {
+    const slot = globalObject[PEER_CAPABILITY_SLOT_SYMBOL];
+    if (
+      !slot || typeof slot !== "object" || slot.version !== 1
+      || typeof slot.token !== "string" || !/^[0-9a-f]{64}$/.test(slot.token)
+    ) {
+      return "off";
+    }
+    return slot.wakeMode === "bounded" ? "bounded" : "off";
+  } catch {
+    return "off";
+  }
+}
+
+function validatePermissionSnapshot(data) {
+  if (!data || typeof data !== "object" || Array.isArray(data)) {
+    return null;
+  }
+  if (data.version !== 1) {
+    return null;
+  }
+  const allowedKeys = new Set(["version", "peerWake", "teamAutonomy", "boardWrite"]);
+  const keys = Object.keys(data);
+  if (keys.length !== 4) {
+    return null;
+  }
+  for (const k of keys) {
+    if (!allowedKeys.has(k)) return null;
+  }
+  if (typeof data.peerWake !== "boolean") return null;
+  if (typeof data.teamAutonomy !== "boolean") return null;
+  if (typeof data.boardWrite !== "boolean") return null;
+
+  return {
+    version: 1,
+    peerWake: data.peerWake,
+    teamAutonomy: data.teamAutonomy,
+    boardWrite: data.boardWrite,
+  };
+}
+
+function isPermissionEntry(entry) {
+  return Boolean(entry && entry.type === "custom" && entry.customType === PERMISSION_ENTRY_TYPE);
+}
+
+function getPermissionSnapshotFromEntry(entry) {
+  return isPermissionEntry(entry) ? validatePermissionSnapshot(entry.data) : null;
+}
+
+function appendPermissionSnapshot(pi, snapshot) {
+  try {
+    if (!pi || typeof pi.appendEntry !== "function") return false;
+    pi.appendEntry(PERMISSION_ENTRY_TYPE, snapshot);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function restorePermissionStateFromBranch({
+  sessionId,
+  branch,
+  peerWakeState,
+  teamAutonomyState,
+  boardWriteState,
+  readPeerCapabilityToken: readTokenFn = readPeerCapabilityToken,
+  setSharedPeerWakeMode: setSharedWakeModeFn = setSharedPeerWakeMode,
+}) {
+  function failClosed() {
+    if (peerWakeState) peerWakeState.resetFor(sessionId);
+    if (teamAutonomyState) teamAutonomyState.resetFor(sessionId);
+    if (boardWriteState) boardWriteState.resetFor(sessionId);
+    if (typeof setSharedWakeModeFn === "function") setSharedWakeModeFn("off");
+  }
+
+  if (!Array.isArray(branch) || branch.length === 0) {
+    failClosed();
+    return false;
+  }
+
+  let latestMatchingEntry = null;
+  for (let i = branch.length - 1; i >= 0; i--) {
+    const entry = branch[i];
+    if (isPermissionEntry(entry)) {
+      latestMatchingEntry = entry;
+      break;
+    }
+  }
+
+  if (!latestMatchingEntry) {
+    failClosed();
+    return false;
+  }
+
+  const snapshot = getPermissionSnapshotFromEntry(latestMatchingEntry);
+  if (!snapshot) {
+    failClosed();
+    return false;
+  }
+
+  const capabilityToken = typeof readTokenFn === "function" ? readTokenFn() : null;
+
+  if (snapshot.teamAutonomy && capabilityToken && sessionId) {
+    if (teamAutonomyState) teamAutonomyState.enableFor(sessionId);
+  } else {
+    if (teamAutonomyState) teamAutonomyState.resetFor(sessionId);
+  }
+
+  if (snapshot.boardWrite && capabilityToken && sessionId) {
+    if (boardWriteState) boardWriteState.enableFor(sessionId);
+  } else {
+    if (boardWriteState) boardWriteState.resetFor(sessionId);
+  }
+
+  if (snapshot.peerWake && capabilityToken && sessionId && typeof setSharedWakeModeFn === "function" && setSharedWakeModeFn("bounded")) {
+    if (peerWakeState) peerWakeState.enableFor(sessionId);
+  } else {
+    if (peerWakeState) peerWakeState.resetFor(sessionId);
+    if (typeof setSharedWakeModeFn === "function") setSharedWakeModeFn("off");
+  }
+
+  return true;
+}
+
 function createPeerWakeState() {
   let sessionId = null;
   let enabled = false;
@@ -2664,7 +2791,7 @@ function attachInboxConsumer(pi, options = {}) {
     }
     const canonicalSessionId = canonicalizePiSessionId(sessionId);
     if (typeof options.onSessionStart === "function") {
-      try { options.onSessionStart(canonicalSessionId); } catch {}
+      try { options.onSessionStart(canonicalSessionId, event, ctx); } catch {}
     }
     if (!canonicalSessionId) return;
 
@@ -2679,13 +2806,26 @@ function attachInboxConsumer(pi, options = {}) {
     }
   }
 
-  function handleSessionShutdown() {
+  function handleSessionShutdown(event, ctx) {
     stopCurrent();
     if (tracker && typeof tracker.clear === "function") {
       try { tracker.clear(); } catch {}
     }
     if (typeof options.onSessionShutdown === "function") {
-      try { options.onSessionShutdown(); } catch {}
+      try { options.onSessionShutdown(event, ctx); } catch {}
+    }
+  }
+
+  function handleSessionTree(event, ctx) {
+    let sessionId = null;
+    try {
+      sessionId = resolveSessionId(event, ctx, pi);
+    } catch {
+      sessionId = null;
+    }
+    const canonicalSessionId = canonicalizePiSessionId(sessionId);
+    if (typeof options.onSessionTree === "function") {
+      try { options.onSessionTree(canonicalSessionId, event, ctx); } catch {}
     }
   }
 
@@ -2709,6 +2849,7 @@ function attachInboxConsumer(pi, options = {}) {
 
   pi.on("session_start", handleSessionStart);
   pi.on("session_shutdown", handleSessionShutdown);
+  pi.on("session_tree", handleSessionTree);
   pi.on("input", handleInput);
   pi.on("message_end", handleMessageEnd);
   pi.on("agent_end", handleAgentEnd);
@@ -2719,6 +2860,7 @@ function attachInboxConsumer(pi, options = {}) {
     stop: stopCurrent,
     handleSessionStart,
     handleSessionShutdown,
+    handleSessionTree,
     handleInput,
     handleMessageEnd,
     handleAgentEnd,
@@ -2749,6 +2891,51 @@ function piPetExtension(pi, dependencies = {}) {
   const boardWriteState = createBoardWriteState();
   const chatTracker = dependencies.chatTracker || createChatTurnTracker();
 
+  // Snapshot user choices, not transient transport availability. An unrelated
+  // toggle must not erase enabled choices merely because a capability vanished.
+  function capturePermissionSnapshot(sessionId) {
+    return {
+      version: 1,
+      peerWake: peerWakeState.isEnabledFor(sessionId),
+      teamAutonomy: teamAutonomyState.isEnabledFor(sessionId),
+      boardWrite: boardWriteState.isEnabledFor(sessionId),
+    };
+  }
+
+  function persistAndNotify(ctx, sessionId, notify, message, level = "info") {
+    if (!appendPermissionSnapshot(pi, capturePermissionSnapshot(sessionId))) {
+      notify(`${message} Current-process only: not saved; resume may restore previous settings.`, "warning");
+      return;
+    }
+    const sm = ctx && ctx.sessionManager;
+    if (sm && typeof sm.getSessionFile === "function" && !sm.getSessionFile()) {
+      notify(`${message} Ephemeral session: no file is saved for resume.`, "warning");
+      return;
+    }
+    notify(`${message} Recorded in session history.`, level);
+  }
+
+  function restoreFromBranch(sessionId, ctx) {
+    const sm = ctx && ctx.sessionManager;
+    let branch = null;
+    if (sm && typeof sm.getBranch === "function") {
+      try {
+        branch = sm.getBranch();
+      } catch {
+        branch = null;
+      }
+    }
+    restorePermissionStateFromBranch({
+      sessionId,
+      branch,
+      peerWakeState,
+      teamAutonomyState,
+      boardWriteState,
+      readPeerCapabilityToken,
+      setSharedPeerWakeMode,
+    });
+  }
+
   if (pi && typeof pi.registerCommand === "function") {
     pi.registerCommand("pet-peer-wake", {
       description: "Enable or disable receiver-side peer-message turn triggering for this Pi session.",
@@ -2761,7 +2948,13 @@ function piPetExtension(pi, dependencies = {}) {
         };
 
         if (!action || action === "status") {
-          notify(`Pi Pet peer wake is ${peerWakeState.enabled ? "on" : "off"} for this session.`);
+          const sessionId = getCanonicalSessionId(ctx, pi);
+          const isEffective = Boolean(
+            peerWakeState.isEnabledFor(sessionId) &&
+            readPeerCapabilityToken() &&
+            getSharedPeerWakeMode() === "bounded"
+          );
+          notify(`Pi Pet peer wake is ${isEffective ? "on" : "off"} for this session.`);
           return;
         }
 
@@ -2775,14 +2968,15 @@ function piPetExtension(pi, dependencies = {}) {
             notify("Cannot enable Pi Pet peer wake: session identity or peer capability is unavailable.", "error");
             return;
           }
-          notify("Pi Pet peer wake is ON for this session (PoC mode, maxHops=1).", "warning");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet peer wake is ON for this session (PoC mode, maxHops=1).", "warning");
           return;
         }
 
         if (action === "off") {
+          const sessionId = getCanonicalSessionId(ctx, pi);
           peerWakeState.disable();
           setSharedPeerWakeMode("off");
-          notify("Pi Pet peer wake is OFF for this session.");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet peer wake is OFF for this session.");
           return;
         }
 
@@ -2801,7 +2995,12 @@ function piPetExtension(pi, dependencies = {}) {
         };
 
         if (!action || action === "status") {
-          notify(`Pi Pet team autonomy is ${teamAutonomyState.enabled ? "on" : "off"} for this session.`);
+          const sessionId = getCanonicalSessionId(ctx, pi);
+          const isEffective = Boolean(
+            teamAutonomyState.isEnabledFor(sessionId) &&
+            readPeerCapabilityToken()
+          );
+          notify(`Pi Pet team autonomy is ${isEffective ? "on" : "off"} for this session.`);
           return;
         }
 
@@ -2813,13 +3012,14 @@ function piPetExtension(pi, dependencies = {}) {
             notify("Cannot enable Pi Pet team autonomy: session identity or peer capability is unavailable.", "error");
             return;
           }
-          notify("Pi Pet team autonomy is ON for this session.", "warning");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet team autonomy is ON for this session.", "warning");
           return;
         }
 
         if (action === "off") {
+          const sessionId = getCanonicalSessionId(ctx, pi);
           teamAutonomyState.disable();
-          notify("Pi Pet team autonomy is OFF for this session.");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet team autonomy is OFF for this session.");
           return;
         }
 
@@ -2838,7 +3038,12 @@ function piPetExtension(pi, dependencies = {}) {
         };
 
         if (!action || action === "status") {
-          notify(`Pi Pet board write is ${boardWriteState.enabled ? "on" : "off"} for this session.`);
+          const sessionId = getCanonicalSessionId(ctx, pi);
+          const isEffective = Boolean(
+            boardWriteState.isEnabledFor(sessionId) &&
+            readPeerCapabilityToken()
+          );
+          notify(`Pi Pet board write is ${isEffective ? "on" : "off"} for this session.`);
           return;
         }
 
@@ -2850,13 +3055,14 @@ function piPetExtension(pi, dependencies = {}) {
             notify("Cannot enable Pi Pet board write: session identity or peer capability is unavailable.", "error");
             return;
           }
-          notify("Pi Pet board write is ON for this session.", "warning");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet board write is ON for this session.", "warning");
           return;
         }
 
         if (action === "off") {
+          const sessionId = getCanonicalSessionId(ctx, pi);
           boardWriteState.disable();
-          notify("Pi Pet board write is OFF for this session.");
+          persistAndNotify(ctx, sessionId, notify, "Pi Pet board write is OFF for this session.");
           return;
         }
 
@@ -3641,12 +3847,15 @@ function piPetExtension(pi, dependencies = {}) {
   if (pi && typeof pi.on === "function") {
     attachInboxConsumer(pi, {
       tracker: chatTracker,
-      shouldTriggerPeerTurn: ({ sessionId }) => peerWakeState.isEnabledFor(sessionId),
-      onSessionStart: (sessionId) => {
-        peerWakeState.resetFor(sessionId);
-        teamAutonomyState.resetFor(sessionId);
-        boardWriteState.resetFor(sessionId);
-        setSharedPeerWakeMode("off");
+      shouldTriggerPeerTurn: ({ sessionId }) => {
+        return (
+          peerWakeState.isEnabledFor(sessionId) &&
+          Boolean(readPeerCapabilityToken()) &&
+          getSharedPeerWakeMode() === "bounded"
+        );
+      },
+      onSessionStart: (sessionId, event, ctx) => {
+        restoreFromBranch(sessionId, ctx);
       },
       onSessionShutdown: () => {
         peerWakeState.disable();
@@ -3654,12 +3863,22 @@ function piPetExtension(pi, dependencies = {}) {
         boardWriteState.disable();
         setSharedPeerWakeMode("off");
       },
+      onSessionTree: (sessionId, event, ctx) => {
+        restoreFromBranch(sessionId, ctx);
+      },
     });
   }
 }
 
 module.exports = piPetExtension;
 module.exports.default = piPetExtension;
+module.exports.PERMISSION_ENTRY_TYPE = PERMISSION_ENTRY_TYPE;
+module.exports.getSharedPeerWakeMode = getSharedPeerWakeMode;
+module.exports.validatePermissionSnapshot = validatePermissionSnapshot;
+module.exports.isPermissionEntry = isPermissionEntry;
+module.exports.getPermissionSnapshotFromEntry = getPermissionSnapshotFromEntry;
+module.exports.appendPermissionSnapshot = appendPermissionSnapshot;
+module.exports.restorePermissionStateFromBranch = restorePermissionStateFromBranch;
 module.exports.ROUTING_NONCE_HEADER = ROUTING_NONCE_HEADER;
 module.exports.ROUTING_NONCE_RE = ROUTING_NONCE_RE;
 module.exports.DEFAULT_POLL_INTERVAL_MS = DEFAULT_POLL_INTERVAL_MS;

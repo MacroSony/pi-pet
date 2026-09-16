@@ -177,7 +177,7 @@ Peer delivery is passive by default:
 pi.sendMessage(peerNote, { deliverAs: "followUp", triggerTurn: false });
 ```
 
-For the current product-value PoC, the receiver may explicitly opt its current attach into automatic peer turns:
+For the current product-value PoC, the receiver may explicitly opt its current session into automatic peer turns:
 
 ```text
 /pet-peer-wake on
@@ -185,13 +185,13 @@ For the current product-value PoC, the receiver may explicitly opt its current a
 /pet-peer-wake status
 ```
 
-Opt-in is memory-only, defaults to off, and resets on session shutdown, extension reload, or a new session start. When enabled, valid peer notes use `triggerTurn:true`. Existing M2 TTL, dedup, rate limit, provenance, user-first ordering and `maxHops=1` remain unchanged: hop 0 may include one supplied reply handle; hop 1 has no reply handle and tells the model to stop. This PoC does not add Team ACL, coordinator wake budgets, persistence, or a hard turn lease.
+Opt-in defaults to off for a new session and follows saved choices on resume/reload and branch navigation (see Session permission persistence below). When enabled, valid peer notes use `triggerTurn:true`. Existing M2 TTL, dedup, rate limit, provenance, user-first ordering and `maxHops=1` remain unchanged: hop 0 may include one supplied reply handle; hop 1 has no reply handle and tells the model to stop. This PoC does not add Team ACL, coordinator wake budgets, or a hard turn lease.
 
 The root extension and Clawd's managed extension share only the existing process-private peer capability slot. The command adds a `wakeMode` flag while preserving the capability token; the remote consumer validates the same token and reads the flag at dispatch time. Nothing is advertised over the wire and no new endpoint is opened.
 
 ## Autonomous Team PoC
 
-Team mutation is disabled by default. The user may grant the current attach standing authorization:
+Team mutation is disabled by default. The user may grant the current session standing authorization:
 
 ```text
 /pet-team-autonomy on
@@ -214,7 +214,7 @@ pet_team(action="dissolve")
 
 Only the leader can use `add` or `remove`, and both remain gated by `/pet-team-autonomy`. `add` consumes one current catalog `psh_` and rechecks that the target session is still active and eligible. Leader status/create/add/remove projections include a `pmh_` only for non-leader members. This removal reference is HMAC-bound to the caller, Team, exact revision, member and `joinedAtMs`; it therefore works while the target is offline but becomes invalid after any Team mutation, remove/re-add, dissolution or coordinator process restart. A member cannot use another caller's reference, and the leader cannot be removed. Neither action ends or starts any session.
 
-Autonomy is session/attach-local, defaults off, and resets on session start, shutdown or extension reload. Team membership itself grants no new messaging, wake or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
+Autonomy is session-local, defaults off for new sessions, and restores explicit saved user choices from the current branch. Team membership itself grants no new messaging, wake or session authority. The lite slice intentionally has no invite flow, role editing, `pth_` namespace, Team-specific send tool, wake budget or UI.
 
 ## Minimal Shared Board PoC
 
@@ -224,7 +224,7 @@ Every active Team has one coordinator-hosted Markdown scratchpad. Reading is ava
 pet_board(action="read")
 ```
 
-Agent writes require separate standing authorization for the current attach:
+Agent writes require separate standing authorization for the current session:
 
 ```text
 /pet-board-write on
@@ -233,9 +233,28 @@ Agent writes require separate standing authorization for the current attach:
 pet_board(action="write", baseRevision=2, markdown="...")
 ```
 
-The document is capped at 8192 UTF-8 bytes. A write atomically replaces the whole document only when `baseRevision` exactly matches the latest Board revision. On conflict, re-read and merge intentionally; there is no silent last-write-wins. Write authorization defaults off and resets on session start, shutdown or extension reload.
+The document is capped at 8192 UTF-8 bytes. A write atomically replaces the whole document only when `baseRevision` exactly matches the latest Board revision. On conflict, re-read and merge intentionally; there is no silent last-write-wins. Write authorization defaults off for new sessions and follows the same session persistence rules as wake and autonomy.
 
 Board output is teammate-authored shared data, not authenticated user instruction. The projection contains only revision, Markdown, update time and a sanitized last-writer attribution. Board writes do not send peer messages, enable wake, or modify Team membership. Whole-document replacement is an intentionally temporary PoC seam; structured patches, history, attachments, Board editing UI and GC remain deferred. A separate presentation-only read-only Board window is available through Team-member pet badges.
+
+## Session permission persistence
+
+Explicit user `on`/`off` commands for the three switches append a single snapshot using `pi.appendEntry("pi-pet-permissions", data)`:
+
+```json
+{"version":1,"peerWake":true,"teamAutonomy":false,"boardWrite":false}
+```
+
+- Only `type: "custom"` entries with this exact object schema are accepted. They are extension state, not model-context messages. No IDs, tokens, handles, or command replay are stored.
+- `session_start` and `session_tree` read only `ctx.sessionManager.getBranch()`. The last matching entry wins; malformed latest data, unreadable branch, or no entry means all off, never fallback to an older `on`.
+- Resume/reload restores the current branch; `/new` has no inherited settings; fork inherits only the selected path. Navigating before an `off` entry can intentionally restore an earlier `on`.
+- Restore requires the current session identity and a valid process-local peer capability. Otherwise permissions stay off; peer wake also requires successfully setting the shared wake mode. Coordinator authentication remains independent. Restoration does not grant transport credentials or trigger a turn.
+- Shutdown clears runtime state without appending an `off`. Status queries, invalid arguments, and failed enable attempts do not append. Explicit `off` writes a new snapshot even when already off.
+- Append errors/missing API leave the requested runtime change in place and visibly warn that it was **not saved**, so resume may restore previous settings. `--no-session` is explicitly reported as ephemeral.
+- Pi owns flushing: a brand-new session may not create its JSONL until the first assistant response. Setting switches then exiting an otherwise unused session is not guaranteed durable. No direct JSONL writes bypass Pi.
+- There is no global default or Agent-facing permission setter. Session files are trusted local user state, not a signed authorization database. Old sessions with no snapshot require one explicit opt-in after upgrading.
+
+Upgrade only the root extension and restart Pi on each host. No Clawd/renderer rebuild or managed SSH hook repair is required for this slice.
 
 ## Secure Remote SSH Inbox Consumption
 

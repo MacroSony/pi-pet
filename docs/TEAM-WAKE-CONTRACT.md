@@ -6,6 +6,12 @@
 >
 > Still not implemented: Team-scoped `pth_` handles, invites, complete ACL enforcement, coordinator wake budgets, capability-policy heartbeat, hard turn leases, structured Board patches/history/editing UI, or semantic movement. The M3b-lite whole-document Board is explicitly not the hardened structured Board described below.
 
+### Current PoC permission persistence (supersedes attach-reset wording below)
+
+The three user switches now save strict `pi-pet-permissions` custom snapshots in Pi session history. Resume/reload/tree restore the latest snapshot on the current branch; new sessions default off, fork inherits its selected path, and corrupt latest entries fail closed. Current identity/capability checks still apply. Shutdown clears only runtime state. This is user-configured session state, not Agent self-authorization or global defaults. Pi controls flush timing, and ephemeral sessions cannot resume. See [full semantics and failure behavior](../packages/pi-extension/README.md#session-permission-persistence).
+
+The attach-reset and synchronization rules in the parked hardened design below are historical proposals, not the current PoC implementation.
+
 ## 1. Product boundary
 
 Pi Pet remains a presence and bounded-interaction layer. It does not own providers, terminals, PTYs, agent processes, worktrees, model credentials, spawning, task scheduling, or transcript exchange.
@@ -52,7 +58,7 @@ Rules:
 - Team size is 1..8.
 - Roles are exactly `leader | member | observer`.
 - There is exactly one leader.
-- Membership policy is fixed to `user_only` in v1. In the current lite adapter, `/pet-team-autonomy on` is an explicit attach-local user authorization under which the Agent may create/dissolve and a leader Agent may add/remove; this is not the future complete ACL design.
+- Membership policy is fixed to `user_only` in v1. In the current lite adapter, `/pet-team-autonomy on` is an explicit session-local user authorization under which the Agent may create/dissolve and a leader Agent may add/remove; this is not the future complete ACL design.
 - The current lite Agent surface cannot change roles, transfer leadership, end/restart/spawn a session, or persist its own authorization.
 - Removing a member never ends its session or pet.
 - A dissolved Team remains readable for audit but accepts no mutation or Team message.
@@ -273,7 +279,7 @@ The scenarios below describe the parked hardened design. Scenario 1 is supersede
 - structured Board patches/history and Board UI beyond the M3b-lite Markdown scratchpad;
 - custom RBAC or policy DSL;
 - autonomous invitations, role editing, leader transfer/election, or membership mutation beyond M3a.2-lite's leader-only online add and offline-safe remove;
-- persistent wake opt-in;
+- global persistent wake defaults (session-history user choices are implemented);
 - unrestricted autonomous multi-round debate;
 - transcript/context synchronization;
 - artifact transfer;

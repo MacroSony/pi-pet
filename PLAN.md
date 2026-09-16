@@ -123,7 +123,7 @@ Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M
 
 #### M3a.2-lite — Agent 自主拉群（完成）
 
-- `/pet-team-autonomy on|off|status` 是当前 attach 的用户 standing authorization；默认 off，不持久化，session start/shutdown/reload 清零。
+- `/pet-team-autonomy on|off|status` 是当前 session 的用户 standing authorization；新 session 默认 off，显式 on/off 写入 Pi custom entry，resume/reload/tree 按当前 branch 恢复。
 - Agent 用 `pet_list_sessions()` 自己发现成员，再调用 `pet_team(action="create", name=..., targets=[...])`；`targets` 只接受 caller-scoped `psh_` catalog handles，创建时消费并解析，绝不持久化或展示给用户。
 - caller 自动成为 leader；targets 成为 member；每个 session 暂限一个 active Team。
 - `pet_team(action="status")` 返回脱敏 Team/member projection，并为 active teammates 生成新鲜 `psh_` handles；通信继续复用 `pet_send`。
@@ -141,7 +141,7 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 
 - 每个 active Team 只有一份 canonical Markdown scratchpad，最多 8192 UTF-8 bytes，存放在 Windows Clawd coordinator。
 - `pet_board(action="read")` 对成员只读开放；返回 revision、Markdown 和最近更新者的脱敏 attribution。
-- `/pet-board-write on|off|status` 是当前 session 的写入授权，默认 off，session start/shutdown/reload 清零。
+- `/pet-board-write on|off|status` 是当前 session 的写入授权；新 session 默认 off，随当前 Pi branch 持久化/恢复用户选择。
 - `pet_board(action="write", baseRevision=..., markdown=...)` 做全文原子替换；必须先读并提交精确 revision，冲突返回 current revision，不做 silent last-write-wins。
 - Board 内容是 teammate-authored shared data，不冒充 user instruction；写入不会自动发消息或唤醒其他 session。
 - Team dissolve 后旧 Board 保留在 coordinator 但不再可访问；历史、GC、恢复和导出后置。
