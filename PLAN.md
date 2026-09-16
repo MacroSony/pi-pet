@@ -179,6 +179,13 @@ M3a.1 neutral Team store 已由提交 `5eed86b` 提供持久 schema/revision 基
 - completion 复用 attach-scoped peer capability 和现有 SSH reverse tunnel；read/clear 仅本地桌宠可用，remote ingress 只开放 authenticated complete。UI projection 隐藏 commandId、petId、raw session、cwd、token、handle 与路径，并只用 `textContent`。
 - 冻结细节见 [PET-CHAT-CONTRACT.md](docs/PET-CHAT-CONTRACT.md)。自动化、optimized build、Windows 本地 drag/double-click/Agent-owned speech 与 Windows ↔ Homelab remote completion/exclusion/Clear 真机 gate 均已通过。
 
+#### 插队切片 — Session-persistent permissions（完成；双机真机通过）
+
+- `/pet-peer-wake`、`/pet-team-autonomy`、`/pet-board-write` 的显式用户选择以严格 custom snapshot 写入 Pi session history。
+- resume/reload/tree 按当前 branch 恢复；new 默认 off、fork 继承所选路径；恢复仍检查当前 identity/capability，损坏最新记录 fail closed。
+- root `3496a58`：397/397 测试、真实 Pi SessionManager JSONL/lifecycle 验证、双扩展 loader 与用户 Windows/Homelab 交互验收通过，正式封板。
+- Pi 在首条 assistant 回复前可能尚未创建 JSONL；沿用原生 flush 行为，不直接改写 session 文件。无全局默认或 Agent 自行授权工具。
+
 #### Parked：完整 Team ACL 与 Structured Board
 
 M3b-lite 真机验证后，再决定是否实现结构化 Board。候选包含：
@@ -324,6 +331,7 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 9. M3c.1 Visible Team：Team badge + 独立只读白板窗口。（完成；Windows smoke 已验证 WebView2 async 创建、跨 pet singleton、close/reopen 与实时 refresh）
 10. M3c.2 Pet Chat：双击宠物打开 bounded pet-originated user/assistant 记录并继续输入。（完成；自动化、optimized build、真实 Pi loader 与 Windows↔Homelab 真机通过）
 11. M3a.2-lite membership lifecycle：leader 使用在线 `psh_` add、使用 status 返回的离线安全 `pmh_` remove。（自动化完成；待 Windows↔Homelab smoke）
+    - Session-persistent permissions 插队切片已封板（root `3496a58`，Windows/Homelab 双机通过）。
 12. M3c.3 Gathering Scene：Team 驱动的 gather/disperse、位置恢复、无焦点平滑移动、多屏与用户拖动抢占；禁止 proximity 推断关系。（membership smoke 后）
 13. M3c.4 playful collaboration：peer bubble queue、Team 动画与 Mika 素材。
 14. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。

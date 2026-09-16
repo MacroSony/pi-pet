@@ -2,13 +2,13 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
-## Session-persistent permission slice — implementation verified, interactive smoke pending
+## Session-persistent permission slice — closed after Windows ↔ Homelab acceptance
 
 - Root extension only: the three explicit user switches append strict version-1 `pi-pet-permissions` custom snapshots through Pi. Resume/reload/tree use only the current branch; new sessions default off, fork inherits the selected path, and malformed latest snapshots fail closed.
 - Restore requires session identity/current capability; shutdown clears runtime state without rewriting history. Failed persistence is visible, `off` stays effective in-process even if append fails, and ephemeral sessions never claim durable storage. No global default, token persistence, slash replay, coordinator/SSH/renderer change, or new Agent tool.
 - Parent review removed permissive string/payload/non-custom entry parsing and unofficial append APIs from the initial worker implementation; added persistence-failure and lifecycle regressions.
 - Root **397/397** tests passed. Real installed Pi SessionManager verified JSONL write/open/resume, branch, fork, and exclusion from compiled model context without provider requests. Its deferred first-assistant flush was also verified and documented. Real TypeScript Pi RPC loader exited 0 with empty stdout/stderr.
-- Windows ↔ Homelab interactive resume/tree smoke remains pending. Upgrade root and restart Pi on each host; no managed-hook repair or renderer rebuild for this slice.
+- User confirmed both Windows and Homelab interactive tests passed on root `3496a58`; this slice is closed. The observed inability to resume an otherwise unused, slash-command-only session matches Pi's verified deferred first-assistant flush, not a Pi Pet persistence regression. No managed-hook repair or renderer rebuild was required.
 
 ## 2026-09-14 — Dynamic lite Team membership automation complete
 
