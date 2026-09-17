@@ -9,14 +9,14 @@
 - Fixed the bubble's flex-shrunk border/content mismatch: a two-complete-line preview fits the default fixed window; longer text is ellipsized with full plain text retained in the hover title. No text-driven native window resizing or FIFO.
 - Terra implemented watchdog handling/tests; parent reviewed it, strengthened native/authoritative-transition coverage and implemented/tested the bubble fix. Renderer JS **97/97**, Rust **128/128**, root **420/420**, production custom-protocol release build passed. Chromium real-layout tests passed **72** text/preset/scale cases across DPR 1 and 1.25; WebKitGTK passed **36**. The old CSS failed containment and the old watchdog code failed both sleep-preservation cases before the fixes.
 - Browser geometry coverage uses default art size, global scales 1–2 and three presets, not arbitrary oversized artwork or Windows-native tooltip/DPI verification. Optional executable-only runner: `node test/bubble-layout.browser.cjs /path/to/chrome`; no browser/npm dependency is downloaded. It uses an isolated profile and trusted fixture (sandbox disabled for the headless harness).
-- **Windows hotfix retest pending:** long hint containment/hover text, natural local sleep retaining Team badge/Gather entries, followed by real Team removal/dissolution clearing them. Actual offline/ineligible sessions still cannot gather; a visible menu is not new authorization. Only renderer changes; Clawd/Pi/hooks are unchanged.
+- **Windows user feedback accepted for this PoC:** the user reports the presentation fixes look OK and defers further polish. This is not a claim that every detailed hover/removal/dissolution case was rerun. Actual offline/ineligible sessions still cannot gather; a visible menu is not new authorization. Only renderer changes; Clawd/Pi/hooks are unchanged.
 
 ## Gathering — Windows single-display functional acceptance
 
 - User-tested environment: **3840×2160, 125%, one Windows display**; functional source root `4cf0842`, Clawd `4bd58a3f`, renderer `733000d`.
 - User confirmed activity-area editing/shared setting, out-of-work-area rejection, insufficient capacity, Disable and stale-editor OCC; explicit gathering/in-area animation; two local plus one Homelab-backed pet and SSH reconnect preserving manual placement until explicit regather.
 - Right-click alone causes the observed focus loss, so the current observation is menu activation, not a confirmed movement-focus defect. This does not certify every focus/modal-input edge case.
-- Accepted scope is the reported single-display PoC cases. Multi-display/negative-origin/mixed-DPI and unreported edge cases remain unverified; visual review, starting with long hints, is next. No automatic gathering/FIFO was added. [Detailed acceptance record](docs/GATHERING-WINDOWS-ACCEPTANCE.md).
+- Accepted scope is the reported single-display PoC cases. Multi-display/negative-origin/mixed-DPI and unreported edge cases remain unverified; the subsequent presentation hotfix received user acceptance. A suspected restart-area reset was traced by the user to their own Apply-conflict test changing the saved rectangle; a fresh Windows restart test retained the area normally. No automatic gathering/FIFO was added. [Detailed acceptance record](docs/GATHERING-WINDOWS-ACCEPTANCE.md).
 
 ## Gathering low-risk closure — capacity eviction and morning checklist
 
