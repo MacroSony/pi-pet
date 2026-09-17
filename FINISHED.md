@@ -2,6 +2,15 @@
 
 > 已完成事项归档。当前待办和下一步路线见 [PLAN.md](PLAN.md)。本文件记录“已经做过并验收过”的内容，不代表所有历史计划都实现了。
 
+## Renderer presentation hotfix — long bubbles and watchdog Team visibility
+
+- User reported long text protruding past its bubble and Team badge/Gather menu disappearing during sleep, while canonical Team membership remained intact and a message restored the UI.
+- Fixed local watchdog sleep as an explicit presentation-only update: it no longer replaces the last authoritative status or clears Team UI. Normal authoritative null/missing/invalid Team updates still clear the badge/menu. Visual sleep detail is tracked separately, so transient-bubble expiry restores Zzz rather than stale idle text. No membership, wake permission or native/coordinator eligibility rule changed.
+- Fixed the bubble's flex-shrunk border/content mismatch: a two-complete-line preview fits the default fixed window; longer text is ellipsized with full plain text retained in the hover title. No text-driven native window resizing or FIFO.
+- Terra implemented watchdog handling/tests; parent reviewed it, strengthened native/authoritative-transition coverage and implemented/tested the bubble fix. Renderer JS **97/97**, Rust **128/128**, root **420/420**, production custom-protocol release build passed. Chromium real-layout tests passed **72** text/preset/scale cases across DPR 1 and 1.25; WebKitGTK passed **36**. The old CSS failed containment and the old watchdog code failed both sleep-preservation cases before the fixes.
+- Browser geometry coverage uses default art size, global scales 1–2 and three presets, not arbitrary oversized artwork or Windows-native tooltip/DPI verification. Optional executable-only runner: `node test/bubble-layout.browser.cjs /path/to/chrome`; no browser/npm dependency is downloaded. It uses an isolated profile and trusted fixture (sandbox disabled for the headless harness).
+- **Windows hotfix retest pending:** long hint containment/hover text, natural local sleep retaining Team badge/Gather entries, followed by real Team removal/dissolution clearing them. Actual offline/ineligible sessions still cannot gather; a visible menu is not new authorization. Only renderer changes; Clawd/Pi/hooks are unchanged.
+
 ## Gathering — Windows single-display functional acceptance
 
 - User-tested environment: **3840×2160, 125%, one Windows display**; functional source root `4cf0842`, Clawd `4bd58a3f`, renderer `733000d`.

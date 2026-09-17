@@ -15,6 +15,19 @@
 
 本次只验活动区域和显式 Gathering；不加 FIFO、自动漫游、Team 权限或模型编排。完整边界见 [Gathering design](GATHERING-SCENE-DESIGN.md)。
 
+## 新增呈现 hotfix：待 Windows 复测
+
+用户随后确认长提示最后一行会溢出气泡；session 本地休眠后 Team 角标/Gather 菜单消失，给某个 member 发消息又恢复，**Team 本身从未退队**。
+
+修复仅在 renderer：watchdog 的局部视觉状态不覆盖权威 Team；真实 Team 清除仍生效。气泡改为两行完整预览、超长省略，悬停保留原文，不按文本改变窗口大小。
+
+- [ ] 更新到 root 锁定的新 renderer、生产构建并替换旧 pet。Clawd/Pi/hooks 源码未改，无需 Repair Hooks 或重开 Pi；重启 Clawd 可作为重建展示进程的便利操作。
+- [ ] 触发长提示：文字不穿出外框、不因四行文字把角色/标签挤出默认窗口；悬停检查原文，换短消息后 tooltip 不残留旧文本。
+- [ ] 等原本的本地 sleep（无需为了测试改生产休眠设置或发消息）：Team 角标和 Gather/End 入口仍在。真实离线/不具资格时 Gather 仍可拒绝，不把菜单显示当成授权。
+- [ ] 用测试 Team 验一次真正 remove/dissolve：对应角标与入口按真实更新消失，不能被睡眠显示缓存留住。
+
+这几项尚未因 Linux VM/Chromium/WebKitGTK 测试通过而判定 Windows 已通过。多屏/混合 DPI 仍保持未测。
+
 ## 1. 更新前：确认 checkout、停止旧展示进程
 
 使用 **cmd.exe**，工作目录：
@@ -44,7 +57,7 @@ git log -1 --oneline
 git submodule status
 ```
 
-使用 root **锁定的** submodule commit，不能用 `git submodule update --remote`。本轮预期 Clawd 为 `4bd58a3f`、renderer 为 `733000d`；root 包含 `f51436c` 及后续夜间收尾修复。submodule status 不应有 `+` 或 `-` 前缀。
+使用 root **锁定的** submodule commit，不能用 `git submodule update --remote`。初始功能验收版本是 Clawd `4bd58a3f`、renderer `733000d`；呈现 hotfix 的 renderer 已更新，以当前 root gitlink 为准，不要手动退回初始版本。submodule status 不应有 `+` 或 `-` 前缀。
 
 下面各段分开执行；任一段失败先保留日志、停止，不把旧 executable 当新版本启动。
 
