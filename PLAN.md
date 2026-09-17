@@ -2,6 +2,38 @@
 
 > 当前主路线（2026-09）。已完成内容见 [FINISHED.md](FINISHED.md)；已实现边界见 [BOUNDARY-CONTRACT.md](docs/BOUNDARY-CONTRACT.md)；Team / Board 详细设计见 [team-collaboration-design.md](docs/drafts/team-collaboration-design.md)。历史推演保留在 [ARCHITECTURE-AUDIT.md](ARCHITECTURE-AUDIT.md)、[REMOTE-PI-DESIGN.md](REMOTE-PI-DESIGN.md) 和 `docs/drafts/`，不再作为当前待办清单。
 
+## 当前执行重点：桌宠体验与小样实验（2026-09-17）
+
+本节优先于下文历史候选的实施顺序。用户日常多开 session；不要求从 Pi Pet 启动会话，不强制唯一常驻 Mika，不因 Herdr 存在扩成运行平台。M1/M2、Team/Board/Chat、权限与单屏 Gathering 已提供本轮实验所需底座，暂不继续为架构完整性补功能。
+
+**核心问题：多只桌宠能否认得清、互动是否好懂有趣，以及 H3 能否低监督地产出多样且合格的角色动画。**
+
+### A. 多 session 的角色交互实机体验
+
+- 从用户真实的多 session 工作方式出发，以 2–3 个已有、可寻址 session 为首轮样本，使用现有消息/Team/Board/Gathering/Agent-owned emotion。
+- 先看能否迅速认出对应任务，能否看清谁对谁说话、收到何种反馈，用户输入是否被桌面表演干扰。测试现有能力；缺少的互动动作先列为缺口，不声称已实现。
+- 对照当前相同外观与少量不同外观/短会话名的效果。多个worker仍可能相同，识别不能只靠换物种或颜色；外观不授予权限，也不代替真实session身份。
+- 真实独立session与Pi Forge工具内短命分身分开：后者尚非可持续寻址的Team成员，其可视化属于后续ChildActivity，不能混算为当前已有桌宠能力。
+
+### B. H3 小角色包与低监督生产实验
+
+- 优先盘点已有Mika、Ferris与历史H3素材/失败经验；不默认重做全套Mika，不立即批量铺开多个物种。
+- 普通worker为候选视觉方向，猫/狗/螃蟹尚未定；可用少量静态方案先比较轮廓、辨识度与风格。以现有Ferris作对照也是有效实验。
+- 建议首个生成样本只选一个worker、约三种代表性动作：待机循环、工作循环、一次性reaction。用于检查循环、工作姿态/可选道具与反应表现，不先要求十几种全状态或专用双人动画。
+- 沿用已有H3 pipeline；角色动作、道具与风格内效果优先直出。抠像、裁切、选周期、重采样和封装为技术后处理，不恢复已否决的局部贴嘴或用补丁特效掩盖生成缺陷。
+- 父代理负责自动检查和视觉初审：角色一致性、错误表情/畸变、alpha边缘、裁切、循环接缝/变色/停顿、时长、实际桌宠尺寸可读性、角色包映射；工具指标不能代替视觉审阅。
+- 输出候选包、对照/循环预览与已知缺陷。小样必须装进实际renderer与其他pet同屏后评价，而非只看放大的生成视频。
+- “Astra能无人监管完善生成”是待验证假设，不是承诺。目标为父代理自行筛错/迭代，用户只判断方向与最终成品；开跑前约定预算/重试上限，失败应停下报告。若仍需用户反复指出明显缺陷，则低监督目标未通过，不能靠扩大量产来掩盖。
+
+### 实施顺序与决策点
+
+1. 现有资产/实机基线盘点，明确多session最难辨认和最缺反馈的具体场景。
+2. 一个worker小样 + 与Mika/现有素材的同屏实验；同时验证H3低监督生产是否成立。
+3. 根据证据只补最有价值的一种交互表现；能复用基础素材/通用动效就不新增每对角色专属动画。情绪仍由Agent决定，不恢复click/hover随机合成情绪。
+4. 通过后才扩角色/动作、补必要的有界气泡队列、考虑视频；失败则改样式/管线/交互，不先增加范围。
+
+**当前暂缓：**启动/恢复入口、唯一常驻角色及持久角色平台、Herdr/standalone迁移、自动Gather、复杂双人动作与完整养成系统。FIFO降为按体验证据决定的辅助项，不再是自动下一步。本轮仅整理计划，未启动生成或功能实现。
+
 ## 1. 产品定位
 
 Pi Pet 让 agent 团队不再只是后台进程，而会在桌面上集合、交流、工作、争论和庆祝。
@@ -119,7 +151,7 @@ Tauri input
 
 ### Milestone 3 — Active Collaboration 与 Autonomous Team（进行中）
 
-Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M3c.2 Pet Chat 均已通过真实 Windows ↔ Homelab 闭环。动态 add/remove 与 session 权限恢复均已真机封板；当前 Gathering 的 Linux 链路与用户报告的 Windows 单屏 PoC 已收口（含呈现修复与区域重启持久化反馈）；下一步 M3c.4 最小气泡显示队列，多屏/混合 DPI 未测；不恢复旧版完整 Team ACL 平台。
+Lean peer wake decision gate、M3a.2-lite autonomous Team、M3b-lite Board 与 M3c.2 Pet Chat 均已通过真实 Windows ↔ Homelab 闭环。动态 add/remove 与 session 权限恢复均已真机封板；当前 Gathering 的 Linux 链路与用户报告的 Windows 单屏 PoC 已收口（含呈现修复与区域重启持久化反馈）；下一步 M3c.4 桌宠实机体验与H3小样实验（见当前执行重点），多屏/混合 DPI 未测；不恢复旧版完整 Team ACL 平台。
 
 #### M3a.2-lite — Agent 自主拉群（完成）
 
@@ -351,7 +383,7 @@ Prototype 明确不承诺：远端、崩溃恢复、自由讨论、自动成员�
 11. M3a.2-lite membership lifecycle：leader 使用在线 `psh_` add、使用 status 返回的离线安全 `pmh_` remove。（自动化与 Windows↔Homelab 真机验收完成）
     - Session-persistent permissions 插队切片已封板（root `3496a58`，Windows/Homelab 双机通过）。
 12. M3c.3 Region-bounded Gathering：用户定义活动区域、显式 Team 集合/结束、结束后原地待命、拖动抢占、无焦点移动与停止时位置保存；先单区域2–4只，不做漫游。（Linux及Windows单屏PoC收口，多屏/混合DPI及未报告边界仍未测）
-13. M3c.4 playful collaboration：先做最小、有界的已接收气泡显示队列，避免连续表达互相覆盖；不改变消息投递/权限/模型唤醒。随后用现有Team/Board/peer/Agent-owned emotion做一轮真实协作体验，再决定动画/Mika素材与视频所需修整；自动Gather仍另行定界。
+13. M3c.4 playful collaboration：先做多session角色辨识/真实交互体验与H3小角色包实验，验证低监督素材生产。按实测缺口补最小交互动作，再决定FIFO、更多形象与视频；不扩启动器或自动Gather，详见顶部当前执行重点。
 14. 用真实协作任务录制 PoC，并执行 standalone / 渐进抽离 / Herdr optional adapter decision gate。
 15. 实现 OpenCode adapter；探索 DSH 公开 plugin seam，不满足边界则维持部分 capability。
 16. 空闲时做中立 ChildActivity 小猫；最后再考虑 Claude、Codex、复杂社交和自由白板。
